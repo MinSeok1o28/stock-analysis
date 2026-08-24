@@ -1,6 +1,6 @@
 ---
 name: daily-brief
-description: 일일 브리핑 — 오늘 뭘 봐야 하는지 한 화면으로. "오늘 브리핑", "브리핑 돌려줘", "오늘 뭐 봐야 해", "밤사이 어땠어" 같은 요청에 사용한다. 보유 종목 밤사이 움직임, 환율·매크로, 다가오는 이벤트를 정리하고 어떤 딥다이브 스킬을 돌릴지 신호를 낸다.
+description: 일일 브리핑 — 오늘 뭘 봐야 하는지 한 화면으로. "오늘 브리핑", "브리핑 돌려줘", "오늘 뭐 봐야 해", "밤사이 어땠어" 같은 요청에 사용한다. 한국·미국 증시, 매크로·환율, 보유 종목 움직임, 시장 주요 종목, 실적 임박을 정리하고 어느 딥다이브를 돌릴지 신호를 낸다.
 ---
 
 # 일일 브리핑
@@ -10,35 +10,69 @@ description: 일일 브리핑 — 오늘 뭘 봐야 하는지 한 화면으로. 
 ## 트리거
 `오늘 브리핑` · `브리핑 돌려줘` · `오늘 뭐 봐야 해` · `밤사이 어땠어`
 
-## 절차
+## 1. 파이프라인 실행
 
-1. **매크로** — `frankfurter.rate("USD","KRW")` (ECB 영업일 종가임을 표기),
-   `fred.latest("us10y")`, `fred.latest("fedfunds")`. 키 없는 항목은 `확인 필요`.
-2. **보유 종목** — `portfolio/holdings.yaml`. 시세는 `sources/prices`가 미구현이면
-   `확인 필요`로 두고 움직임 판단을 생략한다. **웹검색 숫자로 채우지 않는다.**
-3. **다가오는 이벤트** — 실적 일정. 미구현 소스면 명시.
-4. **정성 관찰** — 관심 테마 뉴스는 웹검색(3차). `websearch.note()`로 감싼다.
-   수치는 담지 않는다.
-5. **신호 생성** — `models.Signal` + `SignalKind`. 규칙:
+```bash
+python3 -m src.pipelines.daily_brief      # 리포트만
+python3 -m src.pipelines.dashboard        # 브리핑 + 콕핏 + HTML 대시보드
+```
 
-   | 조건 | 신호 |
-   |---|---|
-   | 실적 발표 7일 이내 | `RUN_STORY_READER` |
-   | 밤사이 ±5% 이상 이동 | `RUN_PRICE_DECODER` |
-   | 신규 편입 종목 | `RUN_COMPANY_DECODER` |
-   | 해외 비중 70% 초과 + 환율 ±2% | `CHECK_FX_EXPOSURE` |
-   | 필수 데이터 미확보 | `DATA_GAP` |
+`reports/daily/<날짜>-brief.md` 생성. 대시보드까지 원하면 두 번째를 쓴다.
 
-   `SignalKind`에 매수·매도 항목이 없다. 구조적으로 매매 신호를 낼 수 없다.
-   `Signal.reason`에 매매 표현을 쓰면 `ValueError`가 난다.
+## 2. 브리핑이 모으는 것
 
-6. **렌더** — `render/brief.daily_brief()` → `reports/daily/<날짜>-brief.md`
-7. **기록** — 사용한 모든 출처를 `provenance.record()`로 `ledger/manifest.jsonl`에 남긴다.
+| 구획 | 출처 | 주의 |
+|---|---|---|
+| 한국 증시 | 토스 `market-indicators` (KOSPI·KOSDAQ) | — |
+| 미국 증시 | 토스 시세 — **SPY·QQQ·DIA·IWM 대용치** | 지수 자체가 아님을 표기 |
+| 매크로 | FRED (미10년물·2년물·연방기금) | 관측일이 며칠 전일 수 있음 |
+| 환율 | 토스(장중) + Frankfurter(ECB 영업일 종가) | 둘의 성격이 다름 |
+| 보유 종목 | `holdings.yaml` + 토스 시세·일봉 | 변동률은 종목당 캔들 1콜 |
+| 주요 종목 | 토스 `rankings` — 거래대금·급등·급락 (한/미) | 보유 외 시장 전체 |
+| 관심 종목 | `watchlist.yaml` (수동) | 실적일이 있어야 신호가 난다 |
 
-## 임계값 조정
-위 표의 숫자(7일, ±5%, 70%, ±2%)를 바꾸는 것은 이 파일 한 곳만 고치면 된다.
-계산·소스 계층은 건드리지 않는다.
+## 3. 신호 규칙 — 임계값은 이 파일에서 바꾼다
 
-## 사용 모듈
-`sources/{frankfurter,fred,prices,websearch}` · `models.Signal` ·
-`render/brief` · `provenance.record`
+| 조건 | 신호 |
+|---|---|
+| 실적 발표 7일 이내 | `RUN_STORY_READER` |
+| 밤사이 ±5% 이상 이동 | `RUN_PRICE_DECODER` |
+| 해외 비중 70% 초과 | `CHECK_FX_EXPOSURE` |
+| 필수 데이터 미확보 | `DATA_GAP` |
+
+숫자를 바꾸려면 `src/pipelines/daily_brief.py` 상단 상수만 고친다
+(`MOVE_THRESHOLD`, `EARNINGS_WINDOW`, `FOREIGN_HEAVY`). 소스·계산 계층은 건드리지 않는다.
+
+**`SignalKind` 에 매수·매도 항목이 없다.** 구조적으로 매매 신호를 낼 수 없고,
+`Signal.reason` 에 매매 표현을 쓰면 `ValueError` 가 난다.
+
+## 4. 실적일의 확정/추정을 구분한다
+
+무료 실적 캘린더 소스가 없어 `watchlist.yaml` 에 사람이 적는다.
+
+```yaml
+- ticker: NVDA
+  earnings_date: 2026-08-26
+  earnings_confirmed: true                    # 회사 공식 발표
+  earnings_source: NVIDIA IR
+```
+
+`earnings_confirmed: false` 면 신호에 `(추정)` 이 붙고
+`확인 필요` 에 "회사 IR 확인 권장" 이 자동으로 올라온다.
+출처마다 날짜가 다른 경우(MSFT 는 10/27·10/28·11/4 로 상이) 그 사실을 `earnings_source` 에 적는다.
+
+## 5. 테마 뉴스는 파이프라인이 수집하지 않는다
+
+웹검색은 **3차 출처**라 수치를 만들 수 없다. 의도된 설계다.
+뉴스가 필요하면 WebSearch 로 직접 찾아 `websearch.note()` 로 감싸 정성 관찰로 추가하고,
+**거기서 나온 숫자를 브리핑 수치 칸에 넣지 않는다.**
+
+## 6. 출력
+
+리포트를 그대로 보여준다. `## 오늘의 액션 신호` 가 핵심이다.
+브리핑 자체가 결론을 내지 않고, 어느 딥다이브(`story-reader`·`price-decoder`·
+`company-decoder`)를 돌릴지만 제시한다. 신호를 받아 이어서 실행할 수 있다.
+
+## 모듈
+`pipelines/{daily_brief,dashboard}` · `sources/{toss,fred,frankfurter,prices,websearch}` ·
+`models.Signal` · `portfolio_io`
