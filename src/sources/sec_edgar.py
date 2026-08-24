@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import os
 from datetime import date
+from pathlib import Path
 
 from ..models import Filing, FinancialFact, Market
-from ..provenance import Sourced, Unavailable, primary_api
-from ._http import SourceUnavailable, get_json
+from ..provenance import Sourced, Unavailable, local_filing, primary_api
+from ._http import SourceUnavailable, get_json, get_text
 
 BASE = "https://data.sec.gov"
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
@@ -120,14 +121,58 @@ def annual_filings(ticker: str, limit: int = 4) -> list[Filing] | Unavailable:
         return Unavailable(f"{ticker} 10-K 목록", str(exc))
     r = sub["filings"]["recent"]
     out = []
-    for form, acc, fdate in zip(r["form"], r["accessionNumber"], r["filingDate"]):
+    for form, acc, doc, fdate in zip(r["form"], r["accessionNumber"],
+                                     r["primaryDocument"], r["filingDate"]):
         if form != "10-K":
             continue
         d = date.fromisoformat(fdate)
-        out.append(Filing(ticker.upper(), "10-K", d.year, d, accession=acc))
+        out.append(Filing(ticker.upper(), "10-K", d.year, d,
+                          accession=acc, primary_document=doc, cik=cik))
         if len(out) >= limit:
             break
     return out or Unavailable(f"{ticker} 10-K 목록", "10-K 제출 이력 없음")
+
+
+RAW_DIR = Path("data/raw")
+
+
+def filing_url(filing: Filing) -> str | None:
+    """Archives 본문 URL. accession 의 하이픈을 제거한 경로를 쓴다."""
+    if not (filing.accession and filing.primary_document and filing.cik):
+        return None
+    acc = filing.accession.replace("-", "")
+    return (f"https://www.sec.gov/Archives/edgar/data/"
+            f"{int(filing.cik)}/{acc}/{filing.primary_document}")
+
+
+def filing_text(filing: Filing) -> Sourced[str] | Unavailable:
+    """10-K 본문을 받아 태그를 제거한 텍스트로 반환한다. 키 불필요.
+
+    원문 HTML 은 data/raw/<티커>/10-K/<연도>/ 에 보존한다 — 인용을 나중에 재검증하려면
+    원문이 남아 있어야 한다. 확정 문서라 캐시 만료를 두지 않는다.
+
+    출처 등급은 1차이고 kind 는 LOCAL_DOCUMENT 다 (로컬에 원문이 있으므로).
+    다만 페이지 번호는 붙이지 않는다 — HTML 공시에는 인쇄 페이지 개념이 없다.
+    섹션명으로 위치를 표시한다.
+    """
+    from ..core.narrative.sections import strip_html
+
+    url = filing_url(filing)
+    if not url:
+        return Unavailable(f"{filing.ticker} {filing.fiscal_year} 10-K 본문",
+                           "accession/primaryDocument 미확보")
+    raw = RAW_DIR / filing.ticker / "10-K" / str(filing.fiscal_year) / filing.primary_document
+    try:
+        html = get_text(url, headers=_headers(), cache_path=raw, min_interval=MIN_INTERVAL)
+    except SourceUnavailable as exc:
+        return Unavailable(f"{filing.ticker} {filing.fiscal_year} 10-K 본문", str(exc))
+    text = strip_html(html)
+    if len(text) < 5_000:
+        return Unavailable(f"{filing.ticker} {filing.fiscal_year} 10-K 본문",
+                           f"본문이 너무 짧다({len(text)}자) — 문서 형식 확인 필요: {url}")
+    return Sourced(text, local_filing(
+        f"{filing.ticker} 10-K FY{filing.fiscal_year}", str(raw),
+        section=f"제출 {filing.filed_on} · {url}"))
 
 
 MARKET = Market.US

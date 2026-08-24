@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import html as _html
 import re
 
 US_ITEMS: dict[str, str] = {
@@ -25,12 +26,27 @@ KR_SECTIONS: tuple[str, ...] = (
 DIFF_PRIORITY: tuple[str, ...] = ("1A", "7", "1", "7A", "3")
 
 
+#: 블록 경계. 개행으로 바꾸지 않으면 문서 전체가 한 줄이 되고 헤딩 인식이 실패한다.
+_BLOCK = re.compile(r"(?i)<\s*(br|/p|/div|/tr|/h[1-6]|/li|/table|/section)\b[^>]*>")
+
+
 def strip_html(raw: str) -> str:
+    """HTML 공시 → 평문.
+
+    두 가지를 반드시 해야 한다:
+      1. 블록 태그를 개행으로 바꾼다. 안 하면 37만 자가 한 줄이 되어
+         'Item 1A.' 같은 헤딩을 줄 단위로 못 잡는다.
+      2. HTML 엔티티를 전부 디코드한다. SEC 문서는 `&#160;`(nbsp)가 도배돼 있어서
+         일부만 치환하면 공백 처리가 깨진다.
+    """
     txt = re.sub(r"(?is)<(script|style).*?</\1>", " ", raw)
+    txt = _BLOCK.sub("\n", txt)
     txt = re.sub(r"(?s)<[^>]+>", " ", txt)
-    txt = (txt.replace("&nbsp;", " ").replace("&amp;", "&")
-              .replace("&#8217;", "'").replace("&#8220;", '"').replace("&#8221;", '"'))
-    return re.sub(r"[ \t]{2,}", " ", txt)
+    txt = _html.unescape(txt)
+    txt = txt.replace("\u00a0", " ").replace("\u200b", "")
+    txt = re.sub(r"[ \t]+", " ", txt)
+    txt = re.sub(r" *\n *", "\n", txt)
+    return re.sub(r"\n{3,}", "\n\n", txt).strip()
 
 
 def split_us_items(text: str) -> dict[str, str]:

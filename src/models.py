@@ -115,6 +115,8 @@ class Filing:
     fiscal_year: int
     filed_on: date
     accession: str | None = None
+    primary_document: str | None = None   # Archives 에서 본문을 찾는 파일명
+    cik: str | None = None
     local_path: str | None = None   # 있으면 페이지 인용이 허용된다
 
 

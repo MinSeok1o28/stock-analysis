@@ -6,7 +6,7 @@ import unittest
 
 from src.core.narrative.hedging import (hedge_delta, risk_terms_appeared,
                                         tone_downgrades)
-from src.core.narrative.sections import split_us_items
+from src.core.narrative.sections import split_us_items, strip_html
 from src.core.narrative.sentence_diff import compare, split_sentences
 
 
@@ -64,6 +64,39 @@ class TestHedging(unittest.TestCase):
     def test_korean_pairs(self) -> None:
         axes = [t.axis for t in tone_downgrades("강력한 성장을 기대합니다.", "안정적 성장을 유지합니다.")]
         self.assertIn("강력→안정", axes)
+
+
+class TestStripHtml(unittest.TestCase):
+    """실제 SEC 문서에서 나온 버그를 고정한다.
+
+    개행을 만들지 않으면 37만 자가 한 줄이 되어 헤딩 인식이 전부 실패하고,
+    그 실패가 '변화 없음'이라는 정상 답변으로 위장된다. 조용히 틀리는 종류다.
+    """
+
+    SEC_LIKE = ("<html><body><div>Part I</div>"
+                "<p>Item&#160;1.&#160;Business</p>"
+                "<p>We design GPUs.&#160;Demand is strong.</p>"
+                "<p>Item&#160;1A.&#160;Risk&#160;Factors</p>"
+                "<p>We may fail.</p>"
+                "<script>var x=1;</script></body></html>")
+
+    def test_block_tags_become_newlines(self) -> None:
+        out = strip_html(self.SEC_LIKE)
+        self.assertGreater(out.count("\n"), 3, "블록 태그가 개행이 되지 않았다")
+
+    def test_numeric_entities_decoded(self) -> None:
+        out = strip_html(self.SEC_LIKE)
+        self.assertNotIn("&#160;", out)
+        self.assertNotIn("\u00a0", out)
+
+    def test_script_removed(self) -> None:
+        self.assertNotIn("var x", strip_html(self.SEC_LIKE))
+
+    def test_headings_land_on_own_lines(self) -> None:
+        """이게 통과해야 split_us_items 가 동작한다."""
+        out = strip_html(self.SEC_LIKE)
+        heads = [ln for ln in out.splitlines() if ln.strip().lower().startswith("item")]
+        self.assertEqual(len(heads), 2, f"헤딩 줄을 찾지 못했다: {out!r}")
 
 
 class TestSections(unittest.TestCase):

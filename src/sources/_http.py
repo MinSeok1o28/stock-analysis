@@ -70,6 +70,39 @@ def get_json(
     return payload
 
 
+def get_text(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    cache_path: Path | None = None,
+    ttl_sec: int = 31_536_000,
+    min_interval: float = 0.12,
+    timeout: int = 60,
+) -> str:
+    """대용량 문서(공시 원문 등)를 받아 캐시한다.
+
+    JSON 이 아니므로 get_json 을 쓸 수 없다. 공시는 확정 문서라 사실상 불변이므로
+    기본 TTL 을 1년으로 잡는다. cache_path 를 주면 data/raw 아래에 원문을 보존한다
+    (인용 검증의 근거 — 나중에 페이지를 다시 확인할 수 있어야 한다).
+    """
+    host = url.split("/")[2]
+    dest = cache_path or (CACHE_DIR / host /
+                          (hashlib.sha256(url.encode()).hexdigest()[:24] + ".txt"))
+    if dest.exists() and (time.time() - dest.stat().st_mtime) < ttl_sec:
+        return dest.read_text(encoding="utf-8", errors="replace")
+    throttle(host, min_interval)
+    try:
+        resp = requests.get(url, headers=headers or {}, timeout=timeout)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        if dest.exists():
+            return dest.read_text(encoding="utf-8", errors="replace")
+        raise SourceUnavailable(f"{host}: {exc}") from exc
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(resp.text, encoding="utf-8")
+    return resp.text
+
+
 def require_env(var: str, hint: str) -> str:
     val = os.environ.get(var, "").strip()
     if not val:
