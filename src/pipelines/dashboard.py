@@ -32,16 +32,85 @@ nav a:hover{{border-color:var(--acc);color:var(--acc)}}
 .sig{{border-left:3px solid var(--acc);background:var(--accs);padding:.6rem .85rem;
  border-radius:0 5px 5px 0;font-size:.86rem;display:flex;flex-direction:column;gap:.15rem}}
 .sig .k{{font-weight:650;color:var(--acc);font-size:.78rem}}
-h3{{font-size:.82rem;font-weight:650;color:var(--mut);margin:1rem 0 .5rem;
- text-transform:uppercase;letter-spacing:.07em}}
+h3{{font-size:.88rem;font-weight:700;color:var(--fg2);margin:1.2rem 0 .55rem;
+ letter-spacing:-.01em}}
+
+/* ══ 종목 검색 ══════════════════════════════════════════ */
+.search{{position:relative;margin:1.1rem 0 .3rem;max-width:620px}}
+.search .fld{{display:flex;align-items:center;gap:.7rem;background:var(--card);
+ border:2px solid var(--line);border-radius:14px;padding:.2rem .5rem .2rem 1.05rem;
+ transition:border-color .12s, box-shadow .12s}}
+.search .fld:focus-within{{border-color:var(--acc);
+ box-shadow:0 0 0 4px color-mix(in srgb,var(--acc) 15%,transparent)}}
+.search .ico{{width:20px;height:20px;flex:none;opacity:.5}}
+.search input{{flex:1;min-width:0;font:inherit;font-size:1.06rem;font-weight:500;
+ padding:.85rem 0;border:0;background:transparent;color:var(--fg);outline:none}}
+.search input::placeholder{{color:var(--mut);font-weight:400}}
+.search input::-webkit-search-cancel-button{{display:none}}
+.search .clr{{border:0;background:transparent;color:var(--mut);font-size:1.3rem;
+ cursor:pointer;padding:.2rem .6rem;line-height:1;border-radius:8px}}
+.search .clr:hover{{background:var(--card2);color:var(--fg)}}
+.search .hint{{font-size:.78rem;color:var(--mut);margin:.45rem 0 0 .3rem}}
+
+.sr{{position:absolute;z-index:60;left:0;right:0;top:calc(100% + .5rem);
+ background:var(--card);border:1px solid var(--line);border-radius:14px;
+ box-shadow:0 16px 44px -14px rgba(0,0,0,.4);overflow:hidden;
+ max-height:400px;overflow-y:auto}}
+.sr .row{{display:grid;grid-template-columns:1fr auto;align-items:center;
+ gap:.4rem 1rem;padding:.85rem 1.15rem;cursor:pointer;
+ border-bottom:1px solid var(--line2)}}
+.sr .row:last-child{{border-bottom:0}}
+.sr .row:hover,.sr .row.on{{background:var(--accs)}}
+.sr .nm{{font-size:1rem;font-weight:600;line-height:1.35;color:var(--fg)}}
+.sr .nm b{{color:var(--acc)}}
+.sr .meta{{grid-column:1;display:flex;gap:.5rem;align-items:center;margin-top:.1rem}}
+.sr .tk{{font-family:"IBM Plex Mono",monospace;font-size:.79rem;color:var(--mut);
+ letter-spacing:.02em}}
+.sr .mk{{font-size:.7rem;color:var(--mut);background:var(--card2);
+ padding:.08rem .38rem;border-radius:4px;border:1px solid var(--line2)}}
+.sr .act{{grid-row:1/3;font-size:.75rem;font-weight:600;color:var(--acc);
+ white-space:nowrap;display:flex;align-items:center;gap:.3rem}}
+.sr .act.new{{color:var(--mut);font-weight:400}}
+.sr .empty{{padding:1.1rem 1.15rem;color:var(--mut);font-size:.9rem}}
+
+/* ── 진행 상태 ─────────────────────────────────────── */
+.prog{{margin-top:.75rem;border-radius:12px;border:1px solid var(--line2);
+ background:var(--card);overflow:hidden}}
+.prog .top{{display:flex;align-items:center;gap:.7rem;padding:.9rem 1.1rem}}
+.prog .spin{{width:17px;height:17px;flex:none;border:2.5px solid var(--line);
+ border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite}}
+@keyframes sp{{to{{transform:rotate(360deg)}}}}
+@media(prefers-reduced-motion:reduce){{.prog .spin{{animation:none}}}}
+.prog .ttl{{font-weight:600;font-size:.95rem}}
+.prog .sub2{{font-size:.8rem;color:var(--mut);margin-top:.12rem}}
+.prog .steps{{border-top:1px solid var(--line2);padding:.7rem 1.1rem;
+ display:flex;flex-direction:column;gap:.4rem;font-size:.84rem;color:var(--mut)}}
+.prog .steps .s{{display:flex;gap:.55rem;align-items:center}}
+.prog .steps .s.done{{color:var(--fg2)}}
+.prog .steps .s.now{{color:var(--acc);font-weight:600}}
+.prog .steps .mk2{{width:1.1rem;text-align:center;flex:none}}
+.prog.ok{{border-color:var(--acc)}} .prog.bad{{border-color:var(--warn)}}
+.prog .msg{{padding:.9rem 1.1rem;font-size:.88rem;line-height:1.65}}
+.prog.bad .msg{{color:var(--warn);background:var(--warns)}}
+.prog .msg a{{color:var(--acc);font-weight:600}}
+a.stk{{color:inherit;text-decoration:none;display:inline-flex;flex-direction:column;gap:.2rem}}
+a.stk .go{{font-size:.7rem;font-weight:600;color:var(--acc)}}
+a.stk .go.new{{color:var(--mut);font-weight:400}}
+a.stk:hover .go{{text-decoration:underline}}
 </style></head><body><div class="w">
 <header><h1>투자 리서치 대시보드</h1>
 <div class="sub">{on} · 매매 판단은 사람이 합니다. 이 화면은 어디를 더 볼지만 제시합니다.</div>
 <div class="search">
- <input id="q" type="search" placeholder="종목명 또는 티커 검색 — 예: 삼성전자, NVDA"
-   autocomplete="off" spellcheck="false">
+ <div class="fld">
+  <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+   stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+  <input id="q" type="search" placeholder="회사 이름이나 티커로 검색  ·  삼성전자, 엔비디아, NVDA"
+   autocomplete="off" spellcheck="false" aria-label="종목 검색">
+  <button class="clr" id="qc" type="button" hidden aria-label="지우기">&times;</button>
+ </div>
+ <div class="hint">종목을 고르면 재무·공시를 받아 분석 페이지를 만들어 새 창으로 엽니다.</div>
  <div id="sr" class="sr" hidden></div>
- <div id="sm" class="smsg" hidden></div>
+ <div id="prog" class="prog" hidden></div>
 </div>
 <nav><a href="#market">증시 현황</a><a href="#macro">매크로</a><a href="#holdings">보유 종목</a>
 <a href="#major">주요 종목</a><a href="#events">이벤트</a>{watchnav}<a href="#signals">액션 신호</a><a href="#cockpit">포트폴리오</a></nav>
@@ -49,60 +118,137 @@ h3{{font-size:.82rem;font-weight:650;color:var(--mut);margin:1rem 0 .5rem;
 {body}
 <script>
 (function(){{
- var q=document.getElementById('q'), sr=document.getElementById('sr'),
-     sm=document.getElementById('sm'), items=[], cur=-1, timer=null;
- function msg(t,bad){{ sm.textContent=t; sm.className='smsg'+(bad?' bad':''); sm.hidden=!t; }}
- function esc(s){{ return s.replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
- function hl(s,term){{ var i=s.toLowerCase().indexOf(term.toLowerCase());
-   return i<0?esc(s):esc(s.slice(0,i))+'<b>'+esc(s.slice(i,i+term.length))+'</b>'+esc(s.slice(i+term.length)); }}
+ var q=document.getElementById('q'), qc=document.getElementById('qc'),
+     sr=document.getElementById('sr'), pg=document.getElementById('prog'),
+     items=[], cur=-1, timer=null, busy=false;
+
+ function esc(s){{return String(s).replace(/[&<>"]/g,function(c){{
+   return {{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c];}});}}
+ function hl(s,t){{var i=s.toLowerCase().indexOf(t.toLowerCase());
+   return i<0?esc(s):esc(s.slice(0,i))+'<b>'+esc(s.slice(i,i+t.length))+'</b>'+esc(s.slice(i+t.length));}}
+
+ /* ── 진행 상태 ── */
+ var STEPS=[['재무·공시 수집','SEC/DART · 토스 시세'],
+            ['세그먼트·역DCF 계산','매출 구성 · 요구 성장률'],
+            ['서사 작성','Claude 가 해석을 씁니다'],
+            ['페이지 렌더','']];
+ var tick=null, at=0, t0=0;
+ function drawProg(name){{
+   var el=STEPS.map(function(s,i){{
+     var cls=i<at?'done':(i===at?'now':'');
+     var mk=i<at?'✓':(i===at?'▸':'·');
+     return '<div class="s '+cls+'"><span class="mk2">'+mk+'</span><span>'+esc(s[0])
+       +(s[1]?' <span style="opacity:.7">— '+esc(s[1])+'</span>':'')+'</span></div>';
+   }}).join('');
+   var el2=Math.round((Date.now()-t0)/1000);
+   pg.className='prog'; pg.hidden=false;
+   pg.innerHTML='<div class="top"><div class="spin"></div>'
+     +'<div><div class="ttl">'+esc(name)+' 분석 중…</div>'
+     +'<div class="sub2">'+el2+'초 경과 · 보통 30초~2분 걸립니다. 이 창을 닫지 마세요.</div></div></div>'
+     +'<div class="steps">'+el+'</div>';
+ }}
+ function startProg(name){{
+   at=0; t0=Date.now(); drawProg(name);
+   if(tick) clearInterval(tick);
+   tick=setInterval(function(){{
+     var s=(Date.now()-t0)/1000;
+     at = s<12?0 : s<28?1 : s<95?2 : 3;
+     drawProg(name);
+   }},1000);
+ }}
+ function stopProg(){{ if(tick){{clearInterval(tick);tick=null;}} }}
+ function done(html,bad){{
+   stopProg(); pg.hidden=false;
+   pg.className='prog '+(bad?'bad':'ok');
+   pg.innerHTML='<div class="msg">'+html+'</div>';
+ }}
+
+ /* ── 검색 ── */
  function draw(term){{
-   if(!items.length){{ sr.hidden=true; return; }}
+   if(!items.length){{
+     sr.innerHTML='<div class="empty">일치하는 종목이 없습니다.</div>'; sr.hidden=false; return;
+   }}
    sr.innerHTML=items.map(function(r,i){{
      return '<div class="row'+(i===cur?' on':'')+'" data-i="'+i+'">'
-       +'<span class="t">'+esc(r.s)+'</span><span>'+hl(r.n,term)+'</span>'
-       +'<span class="g">'+esc(r.m)+(r.ready?' · 생성됨':'')+'</span></div>';
+       +'<div class="nm">'+hl(r.n,term)+'</div>'
+       +'<div class="act'+(r.ready?'':' new')+'">'+(r.ready?'분석 완료 ↗':'분석 생성 →')+'</div>'
+       +'<div class="meta"><span class="tk">'+esc(r.s)+'</span>'
+       +'<span class="mk">'+esc(r.m)+'</span></div></div>';
    }}).join('');
    sr.hidden=false;
-   Array.prototype.forEach.call(sr.children,function(el){{
-     el.onclick=function(){{ pick(items[+el.dataset.i]); }};
+   Array.prototype.forEach.call(sr.querySelectorAll('.row'),function(el){{
+     el.onclick=function(){{pick(items[+el.dataset.i]);}};
    }});
  }}
  function pick(r){{
+   if(busy) return;
    sr.hidden=true; q.blur();
-   if(r.ready){{ window.open('stocks/'+r.s+'.html','_blank'); msg(r.n+' ('+r.s+') 페이지를 새 창으로 열었습니다.'); return; }}
-   msg(r.n+' ('+r.s+') 페이지를 생성하는 중입니다… 재무·시세를 받아오느라 20~60초 걸립니다.');
-   fetch('/api/generate?t='+encodeURIComponent(r.s)).then(x=>x.json()).then(function(d){{
-     if(d.ok){{ msg(r.n+' 생성 완료. 새 창으로 엽니다'+(d.narrative?'':' (서사 미작성 — 사실만 표시됩니다)')+'.');
-                window.open(d.url,'_blank'); }}
-     else msg('생성 실패: '+d.error, true);
-   }}).catch(function(){{
-     msg('이 페이지는 파일로 열려 있어 생성 기능을 쓸 수 없습니다. '
-        +'터미널에서 python3 -m src.pipelines.serve 를 실행한 뒤 http://127.0.0.1:8766 으로 접속하거나, '
-        +'python3 -m src.pipelines.stock_page '+r.s+' 를 직접 실행하세요.', true);
-   }});
+   if(r.ready){{
+     window.open('stocks/'+r.s+'.html','_blank');
+     done('<b>'+esc(r.n)+'</b> 분석 페이지를 새 창으로 열었습니다. '
+       +'최신으로 다시 만들려면 <a href="#" id="rg">여기</a>를 누르세요.');
+     var rg=document.getElementById('rg');
+     if(rg) rg.onclick=function(e){{e.preventDefault();run(r,true);}};
+     return;
+   }}
+   run(r,false);
  }}
+ function run(r,force){{
+   busy=true; startProg(r.n);
+   fetch('/api/generate?t='+encodeURIComponent(r.s)+(force?'&force=1':''))
+    .then(function(x){{return x.json();}})
+    .then(function(d){{
+      busy=false;
+      if(d.ok){{
+        done('<b>'+esc(r.n)+'</b> 분석 완료 — '+esc(d.note||(d.narrative?'서사 포함':'사실만'))
+          +'. 새 창으로 엽니다.');
+        window.open(d.url,'_blank');
+      }} else done('생성 실패: '+esc(d.error||''),true);
+    }})
+    .catch(function(){{
+      busy=false;
+      done('이 페이지를 파일로 직접 열면 분석 생성이 동작하지 않습니다.<br>'
+        +'터미널에서 <code>python3 -m src.pipelines.serve</code> 를 실행한 뒤 '
+        +'<a href="http://127.0.0.1:8766">http://127.0.0.1:8766</a> 으로 접속하세요.',true);
+    }});
+ }}
+
  q.addEventListener('input',function(){{
-   var t=q.value.trim(); cur=-1; msg('');
+   var t=q.value.trim(); cur=-1; qc.hidden=!t;
    if(timer) clearTimeout(timer);
-   if(t.length<1){{ items=[]; sr.hidden=true; return; }}
+   if(!t){{items=[];sr.hidden=true;return;}}
    timer=setTimeout(function(){{
-     fetch('/api/search?q='+encodeURIComponent(t)).then(x=>x.json()).then(function(d){{
-       items=d; draw(t);
-     }}).catch(function(){{
-       items=[]; sr.hidden=true;
-       msg('이 파일을 직접 열면 검색이 동작하지 않습니다. 터미널에서 '
-          +'python3 -m src.pipelines.serve 를 실행하고 http://127.0.0.1:8766 으로 접속하세요.', true);
-     }});
-   }},160);
+     fetch('/api/search?q='+encodeURIComponent(t))
+      .then(function(x){{return x.json();}})
+      .then(function(d){{items=d;draw(t);}})
+      .catch(function(){{
+        items=[]; sr.hidden=true;
+        done('검색은 로컬 서버에서 동작합니다. 터미널에서 '
+          +'<code>python3 -m src.pipelines.serve</code> 실행 후 '
+          +'<a href="http://127.0.0.1:8766">http://127.0.0.1:8766</a> 으로 접속하세요.',true);
+      }});
+   }},150);
  }});
+ qc.addEventListener('click',function(){{q.value='';qc.hidden=true;items=[];sr.hidden=true;q.focus();}});
  q.addEventListener('keydown',function(e){{
-   if(sr.hidden) return;
-   if(e.key==='ArrowDown'){{ cur=Math.min(cur+1,items.length-1); draw(q.value.trim()); e.preventDefault(); }}
-   else if(e.key==='ArrowUp'){{ cur=Math.max(cur-1,0); draw(q.value.trim()); e.preventDefault(); }}
-   else if(e.key==='Enter'){{ if(cur>=0) pick(items[cur]); e.preventDefault(); }}
-   else if(e.key==='Escape'){{ sr.hidden=true; }}
+   if(sr.hidden||!items.length) return;
+   if(e.key==='ArrowDown'){{cur=Math.min(cur+1,items.length-1);draw(q.value.trim());e.preventDefault();}}
+   else if(e.key==='ArrowUp'){{cur=Math.max(cur-1,0);draw(q.value.trim());e.preventDefault();}}
+   else if(e.key==='Enter'){{if(cur<0)cur=0;pick(items[cur]);e.preventDefault();}}
+   else if(e.key==='Escape'){{sr.hidden=true;}}
  }});
- document.addEventListener('click',function(e){{ if(!e.target.closest('.search')) sr.hidden=true; }});
+ document.addEventListener('click',function(e){{if(!e.target.closest('.search'))sr.hidden=true;}});
+
+ /* ── 이벤트 표의 종목 클릭도 같은 흐름으로 ── */
+ Array.prototype.forEach.call(document.querySelectorAll('a.stk'),function(a){{
+   a.addEventListener('click',function(e){{
+     var st=a.dataset.state, r={{s:a.dataset.t,n:a.dataset.n,ready:(st==='full')}};
+     if(st==='full') return;              // 서사까지 있으면 그냥 새 창
+     e.preventDefault();
+     window.scrollTo({{top:0,behavior:'smooth'}});
+     run(r,false);
+   }});
+ }});
 }})();
 </script>
 <footer>리서치 보조 산출물이며 투자 자문이 아닙니다. 1차 스크리너로만 사용하고,
@@ -244,12 +390,17 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
         if ranked:
             rows = []
             import os
+            from ..narrative_io import load as _ldn
             for x in ranked:
                 nm = _name_cell(x.ticker, b.names)
-                if os.path.exists(f"dashboard/stocks/{x.ticker}.html"):
-                    nm = (f'<a href="stocks/{escape(x.ticker)}.html" target="_blank" '
-                          f'style="color:inherit;text-decoration:none;border-bottom:'
-                          f'1px dotted var(--acc)">{nm} ↗</a>')
+                has_page = os.path.exists(f"dashboard/stocks/{x.ticker}.html")
+                has_nar = not _ldn(x.ticker).is_empty
+                state = "full" if (has_page and has_nar) else ("facts" if has_page else "none")
+                nm = (f'<a class="stk" href="stocks/{escape(x.ticker)}.html" '
+                      f'data-t="{escape(x.ticker)}" data-n="{escape(x.name)}" '
+                      f'data-state="{state}" target="_blank">{nm} '
+                      + ('<span class="go">분석 보기 ↗</span>' if state == "full"
+                         else '<span class="go new">분석 생성 →</span>') + '</a>')
                 if x.held and not public:
                     nm += ' <span class="chip">보유</span>'
                 tags = " ".join(

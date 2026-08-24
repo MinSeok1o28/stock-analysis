@@ -84,7 +84,8 @@ def search(q: str, limit: int = 12) -> list[dict]:
     return [{**r, "ready": (STOCKS / f"{r['s']}.html").exists()} for r in out]
 
 
-def generate(ticker: str, *, with_story: bool = False, narrate: bool = True) -> dict:
+def generate(ticker: str, *, with_story: bool = False, narrate: bool = True,
+             force: bool = False) -> dict:
     """종목 페이지를 만든다.
 
     narrate=True 면 서사가 없을 때 Claude CLI 를 호출해 해석까지 쓴다.
@@ -100,7 +101,7 @@ def generate(ticker: str, *, with_story: bool = False, narrate: bool = True) -> 
         note = ""
         if narrate:
             from ..narrative_io import load as load_nar
-            if load_nar(tk).is_empty:
+            if force or load_nar(tk).is_empty:
                 if narrator.available():
                     w = narrator.write(tk)
                     note = ("서사 작성 완료" if not isinstance(w, Unavailable)
@@ -172,7 +173,8 @@ class Handler(BaseHTTPRequestHandler):
             tk = (q.get("t", [""])[0] or "").strip().upper()
             if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", tk):
                 self._json({"ok": False, "error": "티커 형식이 올바르지 않습니다"}, 400); return
-            self._json(generate(tk, narrate=("nonarr" not in q))); return
+            self._json(generate(tk, narrate=("nonarr" not in q),
+                                force=("force" in q))); return
 
         if path.startswith("/stocks/"):
             name = Path(path).name
