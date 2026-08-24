@@ -87,7 +87,9 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | 출처 없는 숫자 금지 | `provenance.require_sourced()` | 렌더 단계 예외 |
 | 웹검색에 페이지 번호 금지 | `Source.__post_init__` | 생성 단계 예외 |
 | 3차 출처로 수치 금지 | `Sourced.__post_init__` | 생성 단계 예외 |
-| 암산 금지 | `core/valuation/reverse_dcf.py` 이분법 + 수렴 진단 | — |
+| 암산 금지 | `core/valuation/reverse_dcf.py` 이분법 + 수렴 진단 |
+| 역DCF 는 기업가치 기준 | `enterprise_value(시총, 순부채)` — 시총만 쓰면 레버리지가 왜곡 |
+| 가정이 숨지 않게 | `basis_comparison()` 최신/3년평균 병기 · `growth_axes()` 구간 병기 | — |
 | 변화 없으면 "변화 없음" | `sentence_diff.SentenceDiff.is_material` | — |
 | **매매 신호 금지** | `SignalKind` 에 매매 항목 부재 + `Signal` 이 매매 표현 거부 | `ValueError` |
 | 브로커 주문 경로 차단 | `toss.ALLOWED_PATHS` + 계좌 헤더 미생성 | `OrderPathBlocked` |

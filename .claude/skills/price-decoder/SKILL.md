@@ -24,15 +24,25 @@ description: 가격 판독기 — "지금 사도 되나?"에 적정주가로 답
 ```python
 from src.sources import sec_edgar, open_dart, prices, fred
 from src.core.valuation.outliers import detect, normalized_base
-from src.core.valuation.reverse_dcf import implied_growth, wacc_sensitivity, cagr, gap_summary
+from src.core.valuation.reverse_dcf import (enterprise_value, implied_growth,
+                                            basis_comparison, growth_axes,
+                                            wacc_sensitivity, cagr, gap_summary)
 
 fcfs   = sec_edgar.free_cash_flow("AAPL")          # 한국이면 open_dart.free_cash_flow
 series = [(f"FY{s.value.fiscal_year}", s.value.value) for s in fcfs]
-base   = normalized_base(series)                    # 3년 평균 — 단년 이상치를 피한다
+latest = series[-1][1]
+avg    = normalized_base(series)                    # 3년 평균
 shares = sec_edgar.annual_series("AAPL", "SharesOutstanding")[-1]
 mcap   = prices.last_close("AAPL").value * shares.value.value
-rf     = fred.latest("us10y").value / 100           # 무위험수익률
+nd     = sec_edgar.net_debt("AAPL")                 # 순부채 = 차입 − 현금 − 단기투자
+ev     = enterprise_value(mcap, nd.value.value)     # ★ 시가총액이 아니라 기업가치
+rf     = fred.latest("us10y").value / 100
 ```
+
+**시가총액이 아니라 기업가치를 넣는다.** FCF 는 채권자·주주 모두에게 귀속되는
+현금흐름이라 할인하면 기업가치가 나온다. 시총만 쓰면 순부채 기업은 요구 성장률이
+과소평가되고 순현금 기업은 과대평가된다. `net_debt()` 가 실패하면 그 사실을
+산출물에 적고 시총 기준임을 명시한다.
 
 WACC 는 단일값으로 확정하지 말고 `rf + 주식위험프리미엄` 을 기준점으로 두되
 **민감도 범위로 다룬다.** ERP 가정은 `[해석]` 으로 표기한다.
@@ -41,14 +51,33 @@ FRED 키가 없으면 기본 범위(7~11%)를 쓰고 "무위험수익률 미확�
 ## 3. 역산한다 — 암산 금지
 
 ```python
-r = implied_growth(mcap, base, wacc)                # 이분법. 수렴 진단 포함
-rows = wacc_sensitivity(mcap, base)                 # 필수 — 하나의 할인율에 의존하지 않는다
-h = cagr(series[0][1], series[-1][1], len(series) - 1)
-print(gap_summary(r.value, h))
+r    = implied_growth(ev, avg, wacc)                # 이분법. 수렴 진단 포함
+rows = wacc_sensitivity(ev, avg)                    # 할인율 민감도 (필수)
+basis = basis_comparison(ev, latest, avg, wacc)     # ★ 기준 FCF 가 결론을 가르는가
+axes  = growth_axes(revenue_series, series)         # ★ 성장률 여러 구간
 ```
 
-**과거 성장률은 시작점에 크게 좌우된다.** 3년·5년·전체 구간을 함께 제시하고
-어느 구간인지 명시한다. 한 구간만 보여주면 오해를 만든다.
+### 반드시 함께 보여줄 두 가지
+
+**① 기준 FCF 를 무엇으로 잡느냐** — 이 한 가정이 판단을 가른다.
+
+```
+NVDA   최신 FCF   $96.7B → 요구 성장률 19.2%
+       3년 평균   $61.5B → 요구 성장률 25.4%
+```
+
+"최신이 새 표준이다"라고 믿으면 싸 보이고, "회복·급등 국면 고점이다"라고 보면 안 싸다.
+한쪽만 쓰고 넘어가면 그 가정이 숨는다. **둘 다 제시하고 갈림을 명시한다.**
+
+**② 성장률은 구간에 따라 부호까지 바뀐다.**
+
+```
+AAPL   FCF 3년 CAGR  -3.9%     FCF 10년 CAGR  +3.5%
+       매출 3년 CAGR +1.8%     매출 5년 CAGR  +8.7%
+```
+
+`growth_axes()` 가 3년·5년·10년·전체를 구간 표기와 함께 반환한다.
+**한 구간만 보여주면 오해를 만든다.**
 
 ## 4. 실패를 숨기지 않는다
 

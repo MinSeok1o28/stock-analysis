@@ -5,7 +5,8 @@ from __future__ import annotations
 import unittest
 
 from src.core.valuation.outliers import detect, normalized_base
-from src.core.valuation.reverse_dcf import (ConvergenceError, cagr, gap_summary,
+from src.core.valuation.reverse_dcf import (ConvergenceError, basis_comparison, cagr,
+                                            enterprise_value, gap_summary, growth_axes,
                                             implied_growth, present_value,
                                             wacc_sensitivity)
 
@@ -61,6 +62,69 @@ class TestImpliedGrowth(unittest.TestCase):
         self.assertEqual(len(rows), 5)
         vals = [r.implied for r in rows if r.implied is not None]
         self.assertEqual(vals, sorted(vals))
+
+
+class TestEnterpriseValue(unittest.TestCase):
+    """FCF 는 채권자·주주 모두에게 귀속되므로 할인하면 기업가치가 나온다.
+    시가총액만 쓰면 순부채 기업은 요구 성장률이 과소평가된다."""
+
+    def test_net_debt_raises_required_growth(self) -> None:
+        mc = 1_000.0
+        base = implied_growth(mc, 50.0, 0.09).value
+        levered = implied_growth(enterprise_value(mc, 200.0), 50.0, 0.09).value
+        self.assertGreater(levered, base)
+
+    def test_net_cash_lowers_required_growth(self) -> None:
+        mc = 1_000.0
+        base = implied_growth(mc, 50.0, 0.09).value
+        cash_rich = implied_growth(enterprise_value(mc, -200.0), 50.0, 0.09).value
+        self.assertLess(cash_rich, base)
+
+    def test_zero_net_debt_is_identity(self) -> None:
+        self.assertEqual(enterprise_value(1_000.0, 0.0), 1_000.0)
+
+
+class TestBasisComparison(unittest.TestCase):
+    """기준 FCF 를 최신으로 잡느냐 3년 평균으로 잡느냐가 결론을 가른다."""
+
+    def test_lower_fcf_requires_higher_growth(self) -> None:
+        rows = basis_comparison(10_000.0, latest_fcf=500.0, avg_fcf=300.0, wacc=0.09)
+        latest, avg = rows[0], rows[1]
+        self.assertEqual(latest.label, "최신 FCF")
+        self.assertGreater(avg.implied, latest.implied)
+
+    def test_both_rows_always_returned(self) -> None:
+        rows = basis_comparison(1e12, latest_fcf=1.0, avg_fcf=1.0, wacc=0.09)
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(r.implied is None and r.note for r in rows))
+
+
+class TestGrowthAxes(unittest.TestCase):
+    """구간에 따라 부호까지 바뀐다 — 하나만 보여주면 오해를 만든다."""
+
+    REV = [(f"FY{y}", v) for y, v in
+           zip(range(2015, 2026), [100, 110, 120, 135, 150, 160, 200, 240, 235, 240, 250])]
+    FCF = [(f"FY{y}", v) for y, v in
+           zip(range(2015, 2026), [20, 22, 25, 30, 33, 40, 55, 70, 60, 65, 62])]
+
+    def test_multiple_spans_present(self) -> None:
+        labels = {a.label for a in growth_axes(self.REV, self.FCF)}
+        self.assertIn("매출 3년 CAGR", labels)
+        self.assertIn("매출 5년 CAGR", labels)
+        self.assertIn("매출 10년 CAGR", labels)
+        self.assertIn("FCF 3년 CAGR", labels)
+
+    def test_span_note_records_endpoints(self) -> None:
+        a = next(x for x in growth_axes(self.REV, self.FCF) if x.label == "매출 3년 CAGR")
+        self.assertEqual(a.note, "FY2022→FY2025")
+
+    def test_short_series_skipped(self) -> None:
+        self.assertEqual(growth_axes([("FY2024", 1.0)], []), [])
+
+    def test_recent_span_can_differ_in_sign(self) -> None:
+        axes = {a.label: a.value for a in growth_axes(self.REV, self.FCF)}
+        self.assertLess(axes["FCF 3년 CAGR"], 0)      # 최근 3년은 역성장
+        self.assertGreater(axes["FCF 10년 CAGR"], 0)  # 10년은 성장
 
 
 class TestHistorical(unittest.TestCase):

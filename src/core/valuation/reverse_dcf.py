@@ -48,6 +48,16 @@ class BisectionResult:
         return f"{self.value:.4%} ({status}, {self.iterations}회, 오차 {self.residual:.3e})"
 
 
+def enterprise_value(market_cap: float, net_debt: float) -> float:
+    """기업가치 = 시가총액 + 순부채.
+
+    FCF 는 채권자·주주 모두에게 귀속되는 현금흐름이므로 할인하면 **기업가치**가 나온다.
+    시가총액만 쓰면 순부채 기업은 요구 성장률이 과소평가되고,
+    순현금 기업(애플·엔비디아·MS)은 과대평가된다.
+    """
+    return market_cap + net_debt
+
+
 def implied_growth(
     market_value: float,
     fcf0: float,
@@ -60,7 +70,10 @@ def implied_growth(
     tol: float = 1e-7,
     max_iter: int = 200,
 ) -> BisectionResult:
-    """market_value가 성립하려면 필요한 연평균 성장률을 이분법으로 구한다.
+    """market_value(= 기업가치)가 성립하려면 필요한 연평균 성장률을 이분법으로 구한다.
+
+    **market_value 에는 시가총액이 아니라 기업가치를 넣어야 한다.**
+    `enterprise_value(시총, 순부채)` 로 만들어 넘긴다.
 
     present_value는 growth에 대해 단조증가하므로 이분법이 항상 수렴한다.
     암산이 아니라 반드시 이 함수를 거치게 하는 것이 CLAUDE.md의 계산 규칙이다.
@@ -107,6 +120,71 @@ class SensitivityRow:
     wacc: float
     implied: float | None
     note: str = ""
+
+
+@dataclass(frozen=True)
+class BasisRow:
+    """기준 FCF 를 무엇으로 잡느냐에 따라 결론이 갈린다 — 그 갈림을 명시적으로 보여준다."""
+
+    label: str
+    fcf: float
+    implied: float | None
+    note: str = ""
+
+
+def basis_comparison(enterprise_val: float, latest_fcf: float, avg_fcf: float,
+                     wacc: float, *, terminal_growth: float = 0.025, years: int = 10
+                     ) -> list[BasisRow]:
+    """최신 FCF vs 3년 평균 FCF — 어느 쪽을 믿느냐가 판단을 가른다.
+
+    "최신이 새 표준이다"라고 보면 싸 보이고, "회복 국면 고점이다"라고 보면 안 싸다.
+    한쪽만 쓰고 넘어가면 그 가정이 숨는다.
+    """
+    rows = []
+    for label, f in (("최신 FCF", latest_fcf), ("3년 평균 FCF", avg_fcf)):
+        try:
+            r = implied_growth(enterprise_val, f, wacc,
+                               terminal_growth=terminal_growth, years=years)
+            rows.append(BasisRow(label, f, r.value, "" if r.converged else "미수렴"))
+        except (ConvergenceError, ValueError) as exc:
+            rows.append(BasisRow(label, f, None, str(exc)[:70]))
+    return rows
+
+
+@dataclass(frozen=True)
+class GrowthAxis:
+    """비교 축 하나. 구간을 명시하지 않으면 성장률은 아무 의미가 없다."""
+
+    label: str
+    value: float | None
+    note: str = ""
+
+    def __str__(self) -> str:
+        return f"{self.label}: " + ("산출 불가" if self.value is None else f"{self.value:+.1%}")
+
+
+def growth_axes(revenue: list[tuple[str, float]], fcf: list[tuple[str, float]]
+                ) -> list[GrowthAxis]:
+    """성장률을 여러 구간으로 함께 제시한다.
+
+    구간에 따라 부호까지 바뀌는 일이 흔하다(애플 3년 -3.9% vs 11년 +7.3%).
+    하나만 보여주면 오해를 만든다.
+    """
+    out: list[GrowthAxis] = []
+    for series, name in ((revenue, "매출"), (fcf, "FCF")):
+        if len(series) < 2:
+            continue
+        for span in (3, 5, 10):
+            if len(series) > span:
+                g = cagr(series[-1 - span][1], series[-1][1], span)
+                out.append(GrowthAxis(f"{name} {span}년 CAGR", g,
+                                      f"{series[-1-span][0]}→{series[-1][0]}"))
+        full = len(series) - 1
+        if full > 0 and full not in (3, 5, 10):
+            g = cagr(series[0][1], series[-1][1], full)
+            out.append(GrowthAxis(f"{name} 전체 {full}년 CAGR", g,
+                                  f"{series[0][0]}→{series[-1][0]}"))
+    return out
 
 
 def wacc_sensitivity(
