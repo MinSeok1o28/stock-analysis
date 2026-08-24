@@ -16,6 +16,7 @@ from ..provenance import Unavailable
 from ..render.dashboard import _CSS, _kpi, _table
 from . import cockpit as ck
 from . import daily_brief as db
+from . import event_scanner as es
 
 OUT = Path("dashboard/index.html")
 
@@ -37,7 +38,7 @@ h3{{font-size:.82rem;font-weight:650;color:var(--mut);margin:1rem 0 .5rem;
 <header><h1>투자 리서치 대시보드</h1>
 <div class="sub">{on} · 매매 판단은 사람이 합니다. 이 화면은 어디를 더 볼지만 제시합니다.</div>
 <nav><a href="#market">증시 현황</a><a href="#macro">매크로</a><a href="#holdings">보유 종목</a>
-<a href="#major">주요 종목</a>{watchnav}<a href="#signals">액션 신호</a><a href="#cockpit">포트폴리오</a></nav>
+<a href="#major">주요 종목</a><a href="#events">이벤트</a>{watchnav}<a href="#signals">액션 신호</a><a href="#cockpit">포트폴리오</a></nav>
 </header>
 {body}
 <footer>리서치 보조 산출물이며 투자 자문이 아닙니다. 1차 스크리너로만 사용하고,
@@ -73,7 +74,8 @@ def _rank_table(v, title: str, names: dict[str, str] | None = None) -> str:
             + f'<p class="src">{escape(v.cite())}</p>')
 
 
-def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False) -> Path:
+def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
+           scan=None) -> Path:
     """public=True 면 개인 자산 정보를 제외한다.
 
     제외: 보유 종목 목록·수량·평가액, 콕핏의 평가액과 종목별 비중,
@@ -172,6 +174,43 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False) -> Pa
                  + _table(["종목", "실적일", "관찰 포인트"], wr, numeric_from=3)
                  + '</section>')
 
+    # 이벤트 스캐너 — 왜 이 종목을 봐야 하는가 + 시나리오
+    if scan and scan.candidates:
+        ranked = [x for x in scan.candidates if x.events and not (public and x.held)]
+        if ranked:
+            rows = []
+            for x in ranked:
+                nm = _name_cell(x.ticker, b.names)
+                if x.held and not public:
+                    nm += ' <span class="chip">보유</span>'
+                tags = " ".join(
+                    f'<span class="chip{" warn" if e.severity >= 3 else ""}">'
+                    f'{escape(e.tag)}</span>' for e in sorted(x.events, key=lambda e: -e.severity))
+                detail = escape(" · ".join(e.detail for e in
+                                           sorted(x.events, key=lambda e: -e.severity)))
+                rows.append([nm, f"{x.price:,.2f}", _mv(x.change),
+                             f'{tags}<br><span class="src">{detail}</span>'])
+            P.append('<section id="events"><h2>지금 볼 이유가 있는 종목</h2>'
+                     '<p class="src" style="margin:0 0 .8rem">보유·관심 종목과 시장 랭킹을 '
+                     '후보로 두고 관측 가능한 이벤트를 태그로 붙였습니다. 예측이 아닙니다.</p>'
+                     + _table(["종목", "현재가", "변동", "왜 봐야 하나"], rows, numeric_from=1)
+                     + "</section>")
+            # 시나리오 카드
+            cards = [x for x in ranked if x.scenarios]
+            for x in cards[:3]:
+                srows = [[escape(s.label), f"{s.move:+.1%}", f"{s.price:,.2f}",
+                          f'<span class="src">{escape(s.basis)}</span>']
+                         for s in x.scenarios]
+                P.append(f'<section><h2>{escape(x.name)} '
+                         f'<span class="chip">{escape(x.ticker)}</span> 시나리오</h2>'
+                         f'<p class="src" style="margin:0 0 .7rem">'
+                         f'{escape(x.stat.summary())} · 표본 {x.stat.n}회</p>'
+                         + _table(["구간", "변동", "가격", "근거"], srows, numeric_from=1)
+                         + '<p class="src" style="margin-top:.7rem">이 구간은 '
+                           '<b>이 종목이 과거 실적에 얼마나 움직였는가</b>입니다. '
+                           '이번에도 그럴 거라는 뜻이 아니며, 방향은 알 수 없습니다.</p>'
+                         + "</section>")
+
     # 액션 신호
     watch_tickers = {w.value.ticker for w in b.watch}
     shown = [s for s in b.signals
@@ -237,10 +276,15 @@ if __name__ == "__main__":
         ck.REPORT_DIR.mkdir(parents=True, exist_ok=True)
         (ck.REPORT_DIR / f"{on.isoformat()}-cockpit.md").write_text(
             ck.to_markdown(c), encoding="utf-8")
-    html = render(b, c, Path("dashboard/public.html") if public else OUT, public=public)
+    scan = es.run(on)
+    (es.REPORT_DIR).mkdir(parents=True, exist_ok=True)
+    (es.REPORT_DIR / f"{on.isoformat()}-events.md").write_text(
+        es.to_markdown(scan), encoding="utf-8")
+    html = render(b, c, Path("dashboard/public.html") if public else OUT,
+                  public=public, scan=scan)
     print(f"✓ {html} ({html.stat().st_size:,} bytes)"
           + ("  [공개 모드 — 보유 정보 제외]" if public else ""))
     print(f"✓ {md}")
     print(f"  한국 지수 {len(b.kr_indices)} · 미국 대용치 {len(b.us_indices)} · "
           f"보유 {len(b.holdings_rows)} · 랭킹 {sum(1 for v in b.rankings.values() if not isinstance(v, Unavailable))}/6 · "
-          f"신호 {len(b.signals)}")
+          f"신호 {len(b.signals)} · 이벤트 종목 {len([x for x in scan.candidates if x.events])}")

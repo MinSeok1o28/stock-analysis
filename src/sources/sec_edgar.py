@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from ..models import Filing, FinancialFact, Market
@@ -217,6 +217,77 @@ def annual_filings(ticker: str, limit: int = 4) -> list[Filing] | Unavailable:
 
 
 RAW_DIR = Path("data/raw")
+
+#: 8-K Item 2.02 = Results of Operations and Financial Condition (실적 발표)
+EARNINGS_ITEM = "2.02"
+
+
+@dataclass(frozen=True)
+class EarningsEvent:
+    """과거 실적 발표. 무료 실적 캘린더가 없어도 SEC 8-K 로 정확히 특정된다."""
+
+    filed_on: date
+    accepted_hhmm: str          # ET 접수 시각
+    accession: str
+
+    @property
+    def after_close(self) -> bool:
+        """장 마감(16:00 ET) 이후 접수면 반응은 다음 거래일에 나온다.
+
+        이걸 무시하고 제출일 당일 수익률을 재면 발표 *전날* 을 재는 셈이라
+        반응 크기가 실제의 1/3 수준으로 나온다 (NVDA ±1.4% vs 실제 ±3.2%).
+        """
+        return self.accepted_hhmm >= "16:00"
+
+    def __str__(self) -> str:
+        return f"{self.filed_on} {self.accepted_hhmm} {'마감후' if self.after_close else '장중/개장전'}"
+
+
+def earnings_events(ticker: str, limit: int = 12) -> list[EarningsEvent] | Unavailable:
+    """과거 실적 발표일. 8-K Item 2.02 로 특정한다. 키 불필요."""
+    try:
+        cik = cik_for(ticker)
+        sub = get_json(f"{BASE}/submissions/CIK{cik}.json", headers=_headers(),
+                       cache_key=f"sub_{cik}", ttl_sec=43_200, min_interval=MIN_INTERVAL)
+    except SourceUnavailable as exc:
+        return Unavailable(f"{ticker} 실적 이력", str(exc))
+    r = sub["filings"]["recent"]
+    items = r.get("items", [""] * len(r["form"]))
+    accepted = r.get("acceptanceDateTime", [""] * len(r["form"]))
+    out = []
+    for form, it, d, acc, ts in zip(r["form"], items, r["filingDate"],
+                                    r["accessionNumber"], accepted):
+        if form != "8-K" or EARNINGS_ITEM not in (it or ""):
+            continue
+        out.append(EarningsEvent(date.fromisoformat(d),
+                                 ts[11:16] if len(ts) >= 16 else "00:00", acc))
+    out.sort(key=lambda e: e.filed_on, reverse=True)
+    return out[:limit] or Unavailable(f"{ticker} 실적 이력", "8-K Item 2.02 이력 없음")
+
+
+def next_earnings_estimate(events: list[EarningsEvent], today: date | None = None
+                           ) -> tuple[date, int] | None:
+    """과거 주기로 다음 실적일을 추정한다. (추정일, 표본수)
+
+    **추정이다.** 회사 공식 발표가 아니므로 산출물에 반드시 그렇게 표기한다.
+    """
+    if len(events) < 4:
+        return None
+    ds = sorted(e.filed_on for e in events)
+    gaps = [(b - a).days for a, b in zip(ds, ds[1:])]
+    gaps = [g for g in gaps if 60 <= g <= 130]          # 분기 주기만
+    if len(gaps) < 3:
+        return None
+    gaps.sort()
+    median = gaps[len(gaps) // 2]
+    nxt = ds[-1] + timedelta(days=median)
+    t = today or date.today()
+    # 유예 20일: 발표 예정일이 임박했지만 아직 8-K 가 안 올라온 구간을 건너뛰지 않는다.
+    # (NVDA 8/26 발표 예정인데 마지막 8-K 가 5/20 이면 추정 8/18 → 그냥 다음 분기로
+    #  밀어버리면 코앞의 실적을 놓친다.)
+    while nxt < t - timedelta(days=20):
+        nxt += timedelta(days=median)
+    return nxt, len(gaps)
 
 
 def filing_url(filing: Filing) -> str | None:

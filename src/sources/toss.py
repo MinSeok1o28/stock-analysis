@@ -244,6 +244,56 @@ def daily_candles(ticker: str, count: int = 200, *, adjusted: bool = True
         f"{NAME} 일봉{'(수정주가)' if adjusted else ''}", _url("/api/v1/candles", params)))
 
 
+def daily_candles_paged(ticker: str, pages: int = 3, *, adjusted: bool = True
+                        ) -> Sourced[list[dict]] | Unavailable:
+    """일봉을 여러 페이지 이어붙인다. 1페이지 200봉 ≈ 10개월, 3페이지면 약 2년.
+
+    52주 신고가·신저가와 다분기 이벤트 반응 통계에 필요하다.
+    nextBefore 로 페이지네이션한다.
+    """
+    rows: list[dict] = []
+    before: str | None = None
+    src = None
+    for _ in range(max(1, pages)):
+        params = {"symbol": ticker.upper(), "interval": "1d",
+                  "count": 200, "adjusted": str(adjusted).lower()}
+        if before:
+            params["before"] = before
+        try:
+            payload = _get("/api/v1/candles", params, ttl_sec=43_200)
+        except SourceUnavailable as exc:
+            if rows:
+                break
+            return Unavailable(f"{ticker} 일봉", f"{NAME}: {exc}")
+        node = _unwrap(payload)
+        chunk = node.get("candles", []) if isinstance(node, dict) else []
+        if not chunk:
+            break
+        rows += chunk
+        src = src or vendor_api(f"{NAME} 일봉(수정주가, {pages}페이지)",
+                                _url("/api/v1/candles", params))
+        before = node.get("nextBefore") if isinstance(node, dict) else None
+        if not before:
+            break
+    norm = {}
+    for r in rows:
+        ts = _pick(r, "timestamp", "time", "date")
+        c = _num(_pick(r, "closePrice", "close"))
+        if ts is None or c is None:
+            continue
+        norm[str(ts)[:10]] = {
+            "date": str(ts)[:10],
+            "open": _num(_pick(r, "openPrice", "open")),
+            "high": _num(_pick(r, "highPrice", "high")),
+            "low": _num(_pick(r, "lowPrice", "low")),
+            "close": c,
+            "volume": _num(_pick(r, "volume")) or 0.0,
+        }
+    if not norm:
+        return Unavailable(f"{ticker} 일봉", f"{NAME} 캔들 파싱 실패")
+    return Sourced([norm[k] for k in sorted(norm)], src)
+
+
 def overnight_move(ticker: str) -> Sourced[float] | Unavailable:
     """직전 2개 일봉의 종가 변동률. 브리핑의 '밤사이 움직임' 신호 입력."""
     c = daily_candles(ticker, count=2)

@@ -33,6 +33,7 @@ python3 -m src.pipelines.dashboard          # → dashboard/index.html
 브라우저로 `dashboard/index.html` 을 열면 끝입니다. 서버가 필요 없습니다.
 
 ```bash
+python3 -m src.pipelines.event_scanner      # 지금 볼 종목 자동 선정 → reports/events/
 python3 -m src.pipelines.company_decoder AAPL  # 기업 해독 카드 → reports/cards/
 python3 -m src.pipelines.story_reader NVDA  # 3개년 10-K 문구 변화 → reports/story/
 python3 -m src.pipelines.editor             # 포트폴리오 편집 UI (127.0.0.1:8765)
@@ -136,6 +137,7 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | 기업 해독기 (재무 골격) | 동작 · 미국(SEC) + 한국(DART) |
 | **세그먼트·제품·지역별 매출** | 동작 · SEC 렌더링 재무제표(R-file) · 키 불필요 |
 | 순부채·총차입 추이 | 동작 · 미국 |
+| **이벤트 스캐너 + 과거 반응 시나리오** | 동작 · SEC 8-K + 일봉 · 키 불필요 |
 | OpenDART (한국 재무·공시목록) | 동작 · 무료 키 · 본문 파싱은 미구현 |
 | 어닝콜 트랜스크립트 | 미구현 (무료 소스 없음) |
 | 실적 캘린더 | 무료 소스 없음 → `watchlist.yaml` 수동 |
