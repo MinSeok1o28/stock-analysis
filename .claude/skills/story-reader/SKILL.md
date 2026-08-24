@@ -39,11 +39,19 @@ python3 -m src.pipelines.story_reader NVDA 3     # 3개년 10-K 비교
 
 1. **신규 위험 어휘** — `impairment`, `litigation`, `going concern`, `material weakness`,
    `restructuring` 등이 새로 등장했으면 최우선. 원문 맥락을 반드시 확인한다.
-2. **약해진 표현** — `will→may`, `strong→stable`, `robust→resilient`.
+2. **사라진 헤지 어휘** — `uncertain`·`may`·`subject to` 가 **줄거나 없어진 것**.
+   증가보다 이쪽이 더 강한 신호인 경우가 많다. 실제 사례(디즈니):
+   FY2023 *"…although the extent and duration is **uncertain**"* →
+   FY2024 *"…which we expect will continue"* — 완충 표현 삭제.
+   **회사가 그 전망을 기정사실로 못 박았다**는 뜻이다.
+3. **약해진 표현** — `will→may`, `strong→stable`, `robust→resilient`.
    양쪽 발췌가 함께 나오므로 문맥을 보고 실질적 톤 다운인지 판단한다.
    단순 문장 재배치일 수도 있다.
-3. **헤지 어휘 증감** — 절대 빈도보다 증가폭을 본다. 문서가 길어지면 자연 증가한다.
-4. **신규/사라진 문장** — 섹션당 6건까지만 표시된다. 더 있으면 리포트에 개수가 적혀 있다.
+4. **서술이 구체화된 주제** — 같은 주제를 더 길고 구체적으로 쓰기 시작한 것.
+   FY2023 *"generative AI"* → FY2024 *"AI, including generative AI and large
+   language model tools"*. 인식이 바뀐 흔적이다.
+5. **헤지 어휘 증감** — 절대 빈도보다 증감폭을 본다. 문서가 길어지면 자연 증가한다.
+6. **신규/사라진 문장** — 섹션당 6건까지만 표시된다. 더 있으면 리포트에 개수가 적혀 있다.
 
 ## 4. 한계를 반드시 명시한다
 
@@ -54,7 +62,14 @@ python3 -m src.pipelines.story_reader NVDA 3     # 3개년 10-K 비교
   미국의 `Item 1A` 같은 표준 섹션 구조가 없다. 한국 종목 요청이 오면
   `company-decoder` 로 재무만 보여주고 이 사실을 밝힌다.
 
-## 5. 출력
+## 5. "답이 안 나온 것"을 반드시 남긴다
+
+리포트에 `이 자료로 답이 안 나온 것 — 다음에 팔 질문` 절이 자동 생성된다.
+신규 위험 어휘·삭제된 헤지마다 "왜 그런가 → 어디서 확인"이 붙는다.
+**어닝콜 트랜스크립트가 없어 경영진 자신감 추이와 가이던스 달성률을 만들 수 없다는 것**도
+여기에 명시된다. 이 절을 지우지 않는다.
+
+## 6. 출력
 
 리포트를 그대로 보여주고, `## 더 파볼 지점` 에 해석을 3개 이내로 채운다.
 문구 변화를 짚을 뿐 매매 판단을 제시하지 않는다.

@@ -76,6 +76,68 @@ def risk_terms_appeared(old: str, new: str) -> list[str]:
     return [t for t in RISK_ESCALATION if _count(new, t) > 0 and _count(old, t) == 0]
 
 
+def hedge_removed(old: str, new: str) -> list[tuple[str, int, int]]:
+    """**사라진 헤지 어휘.** 증가보다 이쪽이 더 강한 신호인 경우가 많다.
+
+    실제 사례(디즈니 10-K):
+      FY2023 "we anticipate this trend to continue, although the extent and
+              duration is **uncertain**"
+      FY2024 "declines ... which we expect will continue"   ← uncertain 삭제
+
+    "불확실하다"를 빼는 건 회사가 그것을 **기정사실로 못 박았다**는 뜻이다.
+    완충 표현의 제거는 톤 강화이자 전망 확정이다.
+    """
+    out = []
+    for term in HEDGE_TERMS:
+        a, b = _count(old, term), _count(new, term)
+        if a > 0 and b < a:
+            out.append((term, a, b))
+    return sorted(out, key=lambda r: -(r[1] - r[2]))
+
+
+def risk_terms_disappeared(old: str, new: str) -> list[str]:
+    """사라진 위험 어휘. 해소됐다는 뜻일 수도, 서술을 줄였다는 뜻일 수도 있다."""
+    return [t for t in RISK_ESCALATION if _count(old, t) > 0 and _count(new, t) == 0]
+
+
+#: 문구 확장을 추적할 주제어. 같은 주제를 더 구체적으로 쓰기 시작하면 인식 변화다.
+WATCH_TOPICS: tuple[str, ...] = (
+    "artificial intelligence", "generative", "large language model",
+    "cybersecurity", "tariff", "supply chain", "regulation", "antitrust",
+    "climate", "인공지능", "공급망", "규제",
+)
+
+
+@dataclass(frozen=True)
+class PhraseExpansion:
+    topic: str
+    before: str
+    after: str
+
+    def __str__(self) -> str:
+        return f"[{self.topic}] 서술 확장"
+
+
+def phrase_expansions(old: str, new: str, *, ctx: int = 110, min_growth: int = 25
+                      ) -> list[PhraseExpansion]:
+    """주제어 주변 서술이 길고 구체적으로 바뀐 경우.
+
+    실제 사례(디즈니):
+      FY2023 "generative artificial intelligence (AI)"
+      FY2024 "artificial intelligence (AI), including generative AI and
+              large language model tools"
+    큰 변화는 아니지만 위협·기회를 더 구체적으로 인식하기 시작한 흔적이다.
+    """
+    out = []
+    for topic in WATCH_TOPICS:
+        a, b = _excerpt(old, topic, ctx), _excerpt(new, topic, ctx)
+        if not a or not b:
+            continue
+        if len(b) - len(a) >= min_growth:
+            out.append(PhraseExpansion(topic, a, b))
+    return out
+
+
 def tone_downgrades(old: str, new: str, *, ctx: int = 60) -> list[ToneChange]:
     """강한 표현이 줄고 대응 약한 표현이 늘어난 축을 찾는다."""
     out = []
@@ -90,6 +152,8 @@ def tone_downgrades(old: str, new: str, *, ctx: int = 60) -> list[ToneChange]:
 
 def _excerpt(text: str, term: str, ctx: int) -> str:
     m = re.search(rf"\b{re.escape(term)}\b", text, flags=re.IGNORECASE)
+    if not m:                      # 다어절·한글 주제어는 단어경계가 안 맞는다
+        m = re.search(re.escape(term), text, flags=re.IGNORECASE)
     if not m:
         return ""
     lo, hi = max(0, m.start() - ctx), min(len(text), m.end() + ctx)

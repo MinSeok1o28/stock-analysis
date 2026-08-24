@@ -20,7 +20,7 @@ from ..core.valuation.fundamentals import (fcf_yield, margin, per_share, streak,
 from ..core.valuation.outliers import detect, normalized_base
 from ..models import AssetType, Market
 from ..provenance import Sourced, Unavailable, record
-from ..sources import open_dart, prices, sec_edgar, toss
+from ..sources import open_dart, prices, sec_edgar, sec_segments, toss
 
 REPORT_DIR = Path("reports/cards")
 
@@ -48,6 +48,9 @@ class CompanyCard:
     business_excerpt: str
     segment_hints: list[str]
     filing_cite: str
+    segments: object | None = None       # SegmentReport | None
+    net_debt: object | None = None       # Sourced[NetDebt] | Unavailable | None
+    debt_series: list = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 
@@ -119,9 +122,23 @@ def run(ticker: str, on: date | None = None) -> CompanyCard | Unavailable:
                             break
                 else:
                     notes.append("10-K Item 1(Business) 섹션을 분리하지 못했다")
-        notes.append("사업부문×지역 매출 분해는 companyfacts 에 차원 축이 없어 "
-                     "본문 단서만 제시한다 — 정확한 수치는 10-K 세그먼트 주석에서 확인 필요")
+        # 세그먼트: companyfacts 에 차원 축이 없으므로 SEC 렌더링 재무제표(R-file)에서 가져온다
+        seg = sec_segments.fetch(tk, fs[0] if not isinstance(fs, Unavailable) else None)
+        if isinstance(seg, Unavailable):
+            notes.append(f"세그먼트 표 미확보 — {seg.reason[:90]}")
+            seg = None
+        else:
+            for n in seg.notes:
+                notes.append(f"세그먼트: {n}")
+        # 순부채 + 총차입 추이
+        nd = sec_edgar.net_debt(tk)
+        if isinstance(nd, Unavailable):
+            notes.append(f"순부채 미확보 — {nd.reason[:70]}")
+        dser = sec_edgar.annual_series(tk, "TotalDebt")
+        debt_series = [] if isinstance(dser, Unavailable) else dser
+        seg = None if 'seg' not in dir() else seg
     else:
+        seg = None; nd = Unavailable(f"{tk} 순부채", "한국은 미구현"); debt_series = []
         # 한국: OpenDART. 각 항목이 3개년을 담고 있어 1회 호출로 시계열이 나온다.
         for concept in ("Revenues", "OperatingIncome", "NetIncome"):
             r = open_dart.annual_series(tk, concept)
@@ -158,8 +175,11 @@ def run(ticker: str, on: date | None = None) -> CompanyCard | Unavailable:
         else:
             market_cap = prices.market_cap(tk, shares)
 
-    return CompanyCard(tk, on, market, asset_type, info, series, fcf, outliers,
-                       shares, px, market_cap, business, hints, cite, notes)
+    return CompanyCard(ticker=tk, on=on, market=market, asset_type=asset_type,
+                       info=info, series=series, fcf=fcf, outliers=outliers,
+                       shares=shares, price=px, market_cap=market_cap,
+                       business_excerpt=business, segment_hints=hints, filing_cite=cite,
+                       notes=notes, segments=seg, net_debt=nd, debt_series=debt_series)
 
 
 def to_markdown(c: CompanyCard) -> str:
@@ -220,13 +240,82 @@ def to_markdown(c: CompanyCard) -> str:
     if c.outliers:
         L += ["", "### 이상치 감지", ""] + [f"- [사실] {o}" for o in c.outliers]
 
+    # ── 매출 구성 (세그먼트·제품·지역) ──────────────────────────
+    if c.segments and getattr(c.segments, "tables", None):
+        from ..sources.sec_segments import sourced as seg_sourced
+        titles = {"segment": "사업부문별", "product": "제품·서비스별", "geography": "지역별"}
+        L += ["", "## 매출 구성", ""]
+        for key, title in titles.items():
+            t = c.segments.tables.get(key)
+            if not t:
+                continue
+            sc = seg_sourced(c.segments, key)
+            L += [f"### {title}", "", "| 구분 | 매출 | 비중 | 영업이익률 |", "|---|---:|---:|---:|"]
+            for g, v, share, m in t.shares():
+                L.append(f"| {g} | {v/div:,.1f}{unit} | {share:.1%} | "
+                         + (f"{m:.1%} |" if m is not None else "— |"))
+            if t.total_revenue:
+                L.append(f"| **합계** | **{t.total_revenue/div:,.1f}{unit}** | 100% | — |")
+            L += ["", f"↳ 출처: {sc.cite() if not isinstance(sc, Unavailable) else sc.cite()}", ""]
+        # 이익 기여 vs 매출 비중의 괴리 — 원본 카드의 핵심 통찰
+        st = c.segments.tables.get("segment")
+        if st and st.operating_income:
+            oi = st.operating_income
+            tot_oi = sum(v for g, v in oi.items() if g not in st._total_keys())
+            rows = [(g, sh, oi[g] / tot_oi) for g, v, sh, m in st.shares()
+                    if g in oi and tot_oi]
+            gaps = [(g, sh, os_) for g, sh, os_ in rows if abs(os_ - sh) >= 0.05]
+            if gaps:
+                L += ["### 매출 비중 vs 이익 기여", ""]
+                for g, sh, os_ in sorted(gaps, key=lambda r: -(r[2] - r[1])):
+                    L.append(f"- [사실] **{g}** — 매출 {sh:.1%} / 영업이익 {os_:.1%} "
+                             f"({os_ - sh:+.1%}p)")
+                L.append("- [해석] 매출 비중과 이익 기여가 벌어지는 부문이 실제 돈줄입니다.")
+                L.append("")
+
+    # ── 재무 건전성 ─────────────────────────────────────────────
+    if c.net_debt is not None and not isinstance(c.net_debt, Unavailable):
+        nd = c.net_debt.value
+        L += ["## 재무 건전성", "",
+              f"- [사실] {nd}  \n  ↳ 출처: {c.net_debt.cite()}"]
+        if nd.long_term_investments:
+            L.append(f"- [사실] 장기투자 {nd.long_term_investments/div:,.1f}{unit} 포함 시 "
+                     f"{'순현금' if nd.value_incl_lt < 0 else '순부채'} "
+                     f"{abs(nd.value_incl_lt)/div:,.1f}{unit}")
+        if c.debt_series:
+            ds = _vals(c.debt_series)[-4:]
+            L += ["", "| 회계연도 | 총차입 |", "|---|---:|"]
+            L += [f"| {k} | {v/div:,.1f}{unit} |" for k, v in ds]
+            if len(ds) >= 2:
+                d = (ds[-1][1] - ds[0][1]) / ds[0][1] if ds[0][1] else None
+                if d is not None:
+                    L.append("")
+                    L.append(f"- [사실] {ds[0][0]}→{ds[-1][0]} 총차입 {d:+.1%} "
+                             + ("(디레버리징)" if d < -0.02 else "(증가)" if d > 0.02 else "(횡보)"))
+        L.append("")
+
     if c.business_excerpt:
         L += ["", "## 돈 버는 구조 — 10-K Item 1 발췌", "",
               f"> {c.business_excerpt[:1600]}…", "", f"↳ 출처: {c.filing_cite}"]
     if c.segment_hints:
         L += ["", "### 세그먼트·지역 단서 (본문)", ""] + [f"- [사실] {h}" for h in c.segment_hints]
 
-    L += ["", "## 확인 필요", ""] + ([f"- {n}" for n in c.notes] or ["- 없음"])
+    L += ["", "## 확인 필요 (데이터 미확보)", ""] + ([f"- {n}" for n in c.notes] or ["- 없음"])
+
+    L += ["", "## 이 카드로 답이 안 나온 것 — 다음에 팔 질문", ""]
+    L.append("- 최근 분기 추세는? → 이 카드는 연간 10-K 기준. 분기 실적·어닝콜 확인 필요")
+    if c.segments and c.segments.tables.get("segment"):
+        L.append("- 부문별 이익 추세가 구조적인가 일시적인가? → 3개년 부문 표는 R-file 에 있으나 "
+                 "현재 최신 연도만 파싱한다. 다년 비교는 스토리 리더로")
+    else:
+        L.append("- 사업부문별 매출·이익 분해 → 세그먼트 표를 얻지 못했다. "
+                 "10-K 세그먼트 주석을 직접 확인")
+    if isinstance(c.fcf, Unavailable) or not c.series.get("Revenues"):
+        L.append("- 재무 골격이 비어 있다 → 원문 재무제표 직접 확인 필요")
+    L.append("- 경영진 교체·자본배분 방향 → 최근 8-K·프록시(DEF 14A) 확인")
+    L.append("- 이 회사가 망하는 시나리오는? → 10-K Item 1A(Risk Factors)와 "
+             "스토리 리더의 신규 위험 어휘를 함께 볼 것")
+
     L += ["", "## 더 파볼 지점", "",
           "- [해석] 위 수치는 1차 스크리너입니다. 투자 판단에 쓰는 숫자는 원문에서 재확인하십시오.",
           "- 가격 판독기(`price-decoder`)로 이 시가총액이 요구하는 성장률을 역산할 수 있습니다.",

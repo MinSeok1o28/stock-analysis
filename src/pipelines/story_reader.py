@@ -15,7 +15,9 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from ..core.narrative.hedging import (ToneChange, hedge_delta, risk_terms_appeared,
+from ..core.narrative.hedging import (PhraseExpansion, ToneChange, hedge_delta,
+                                      hedge_removed, phrase_expansions,
+                                      risk_terms_appeared, risk_terms_disappeared,
                                       tone_downgrades)
 from ..core.narrative.sections import US_ITEMS, sections_to_compare, split_us_items
 from ..core.narrative.sentence_diff import SentenceDiff, compare
@@ -35,10 +37,14 @@ class SectionChange:
     tone: list[ToneChange]
     hedges: list[tuple[str, int, int]]
     new_risks: list[str]
+    removed_hedges: list[tuple[str, int, int]] = field(default_factory=list)
+    gone_risks: list[str] = field(default_factory=list)
+    expansions: list[PhraseExpansion] = field(default_factory=list)
 
     @property
     def is_material(self) -> bool:
-        return bool(self.diff.is_material or self.tone or self.hedges or self.new_risks)
+        return bool(self.diff.is_material or self.tone or self.hedges or self.new_risks
+                    or self.removed_hedges or self.gone_risks or self.expansions)
 
 
 @dataclass
@@ -110,6 +116,9 @@ def run(ticker: str, years: int = 3, on: date | None = None) -> StoryResult | Un
                 tone=tone_downgrades(a[k], b[k]),
                 hedges=hedge_delta(a[k], b[k])[:5],
                 new_risks=risk_terms_appeared(a[k], b[k]),
+                removed_hedges=hedge_removed(a[k], b[k])[:5],
+                gone_risks=risk_terms_disappeared(a[k], b[k]),
+                expansions=phrase_expansions(a[k], b[k])[:4],
             ))
         if not keys:
             notes.append(f"FY{older.fiscal_year}→FY{newer.fiscal_year}: "
@@ -166,12 +175,28 @@ def to_markdown(r: StoryResult) -> str:
                     L += [f"- [사실] {t}",
                           f"  - 이전: …{t.excerpt_before}…" if t.excerpt_before else "",
                           f"  - 이후: …{t.excerpt_after}…" if t.excerpt_after else ""]
+            if s.removed_hedges:
+                L += ["", "**사라진 헤지 어휘** — 증가보다 강한 신호일 수 있다", ""]
+                L += [f"- [사실] `{w}` {a}회 → {b}회"
+                      + ("  ← 완전히 삭제" if b == 0 else "") for w, a, b in s.removed_hedges]
+                L.append("- [해석] 완충 표현을 빼는 건 그 전망을 기정사실로 못 박았다는 뜻일 수 있다. "
+                         "원문 맥락 확인 권장.")
             if s.hedges:
                 L += ["", "**헤지 어휘 증가**", ""]
                 L += [f"- [사실] `{w}` {a}회 → {b}회" for w, a, b in s.hedges]
             if s.new_risks:
                 L += ["", "**신규 위험 어휘**", "",
                       f"- [사실] {', '.join(s.new_risks)}"]
+            if s.gone_risks:
+                L += ["", "**사라진 위험 어휘**", "",
+                      f"- [사실] {', '.join(s.gone_risks)}",
+                      "- [해석] 해소됐다는 뜻일 수도, 서술을 줄였다는 뜻일 수도 있다"]
+            if s.expansions:
+                L += ["", "**서술이 구체화된 주제**", ""]
+                for e in s.expansions:
+                    L += [f"- [사실] {e}",
+                          f"  - 이전: …{e.before}…",
+                          f"  - 이후: …{e.after}…"]
             if s.diff.added:
                 L += ["", "**신규 문장**", ""]
                 L += [f"- [사실] {x}" for x in s.diff.added[:MAX_EXCERPTS]]
@@ -189,6 +214,19 @@ def to_markdown(r: StoryResult) -> str:
     if r.notes:
         L += ["", "## 확인 필요", ""] + [f"- {n}" for n in r.notes]
 
+    L += ["", "## 이 자료로 답이 안 나온 것 — 다음에 팔 질문", ""]
+    L.append("- 경영진 자신감 추이·가이던스 달성률 → **어닝콜 트랜스크립트 필요** "
+             "(무료 소스 없음). 분기별 발언 톤과 약속 대비 실적을 대조해야 알 수 있다.")
+    L.append("- 사업부문별 실적이 이 변화와 어떻게 연결되는가 → "
+             "`company-decoder` 의 세그먼트 표에서 확인")
+    for p in r.pairs:
+        for s in p.material_sections:
+            for t in s.new_risks:
+                L.append(f"- `{t}` 가 왜 새로 등장했는가 → 해당 10-K Item {s.key} 원문 "
+                         f"및 최근 8-K 확인")
+            for w, a, b in s.removed_hedges[:2]:
+                if b == 0:
+                    L.append(f"- `{w}` 가 왜 완전히 삭제됐는가 → Item {s.key} 전후 문장 대조")
     L += ["", "## 더 파볼 지점", ""]
     hot = [(p, s) for p in r.pairs for s in p.material_sections
            if s.new_risks or len(s.tone) >= 2]
