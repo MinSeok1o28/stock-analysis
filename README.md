@@ -33,6 +33,7 @@ python3 -m src.pipelines.dashboard          # → dashboard/index.html
 브라우저로 `dashboard/index.html` 을 열면 끝입니다. 서버가 필요 없습니다.
 
 ```bash
+python3 -m src.pipelines.company_decoder AAPL  # 기업 해독 카드 → reports/cards/
 python3 -m src.pipelines.story_reader NVDA  # 3개년 10-K 문구 변화 → reports/story/
 python3 -m src.pipelines.editor             # 포트폴리오 편집 UI (127.0.0.1:8765)
 python3 -m src.pipelines.dashboard --public # 개인 정보 뺀 공개용 → dashboard/public.html
@@ -130,6 +131,7 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | 토스증권 (시세·지수·랭킹) | 동작 · 무료 키 |
 | 10-K 본문 다운로드 | 동작 · 키 불필요 (SEC Archives) |
 | 스토리 리더 (공시 문구 diff) | 동작 · 어닝콜 없이 공시 축만 |
+| 기업 해독기 (재무 골격 + Item 1) | 동작 · 미국만 |
 | OpenDART (한국 공시) | 미구현 |
 | 어닝콜 트랜스크립트 | 미구현 (무료 소스 없음) |
 | 실적 캘린더 | 무료 소스 없음 → `watchlist.yaml` 수동 |

@@ -52,8 +52,35 @@ def cik_for(ticker: str) -> str:
     raise SourceUnavailable(f"{ticker}: SEC 티커 목록에 없음 (미국 상장사만 조회 가능)")
 
 
+ANNUAL_MIN_DAYS, ANNUAL_MAX_DAYS = 340, 380
+
+
+def _is_annual(entry: dict) -> bool:
+    """연간 항목인가.
+
+    SEC 는 10-K 안에 분기값도 함께 싣는다. 기간 길이로 걸러야 한다.
+    `fp == "FY"` 만 보면 90일짜리 분기값이 통과한다 (실측 확인).
+    start 가 없으면 시점 항목(주식수·자산 등)이므로 그대로 통과시킨다.
+    """
+    start, end = entry.get("start"), entry.get("end")
+    if not end:
+        return False
+    if not start:
+        return True                      # instant fact
+    days = (date.fromisoformat(end) - date.fromisoformat(start)).days
+    return ANNUAL_MIN_DAYS <= days <= ANNUAL_MAX_DAYS
+
+
 def annual_series(ticker: str, concept: str) -> list[Sourced[FinancialFact]] | Unavailable:
-    """연도별 값을 출처와 함께 반환한다. 10-K(FY) 원본만 사용한다."""
+    """연도별 값을 출처와 함께 반환한다.
+
+    **핵심 주의**: companyfacts 의 `fy` 는 *그 값이 실린 보고서의* 회계연도이지
+    데이터 기간이 아니다. FY2022 10-K 에는 FY2020 비교치가 `fy=2022` 로 들어있다.
+    이걸 키로 쓰면 연도가 통째로 밀린다 — 기간 종료일(`end`)로 키를 잡아야 한다.
+
+    회계연도 라벨은 기간 종료 연도를 쓴다. 회사 자체 명명(예: 1월 결산사)과
+    다를 수 있으나 시계열 정렬과 비교에는 일관되다.
+    """
     try:
         cik = cik_for(ticker)
         tags = CONCEPTS.get(concept, (concept,))
@@ -71,19 +98,26 @@ def annual_series(ticker: str, concept: str) -> list[Sourced[FinancialFact]] | U
             continue
         unit, entries = next(iter(node["units"].items()))
         url = f"{BASE}/api/xbrl/companyconcept/CIK{cik}/us-gaap/{tag}.json"
-        out: dict[int, Sourced[FinancialFact]] = {}
+        # 기간 종료일 → (제출일, 항목). 같은 기간이 여러 보고서에 실리면 최신 제출본을 쓴다.
+        best: dict[str, tuple[str, dict]] = {}
         for e in entries:
-            if e.get("form") != "10-K" or e.get("fp") != "FY" or "frame" not in e:
+            if e.get("form") != "10-K" or not _is_annual(e):
                 continue
-            fy = e["fy"]
-            out[fy] = Sourced(
-                FinancialFact(concept=concept, unit=unit,
-                              period_end=date.fromisoformat(e["end"]),
-                              fiscal_year=fy, value=float(e["val"])),
-                primary_api(f"{NAME} {tag}", url, section=f"FY{fy} 10-K"),
-            )
+            end = e["end"]
+            filed = e.get("filed", "")
+            if end not in best or filed > best[end][0]:
+                best[end] = (filed, e)
+        out: list[Sourced[FinancialFact]] = []
+        for end in sorted(best):
+            e = best[end][1]
+            d = date.fromisoformat(end)
+            out.append(Sourced(
+                FinancialFact(concept=concept, unit=unit, period_end=d,
+                              fiscal_year=d.year, value=float(e["val"])),
+                primary_api(f"{NAME} {tag}", url, section=f"기간종료 {end} · 10-K"),
+            ))
         if out:
-            return [out[k] for k in sorted(out)]
+            return out
     return Unavailable(f"{ticker} {concept}", f"XBRL 태그 미발견: {tags}")
 
 
@@ -95,19 +129,20 @@ def free_cash_flow(ticker: str) -> list[Sourced[FinancialFact]] | Unavailable:
         return ocf
     if isinstance(capex, Unavailable):
         return capex
-    cx = {s.value.fiscal_year: s for s in capex}
+    cx = {s.value.period_end: s for s in capex}
     out = []
     for s in ocf:
         fy = s.value.fiscal_year
-        if fy not in cx:
+        if s.value.period_end not in cx:
             continue
         fact = FinancialFact("FreeCashFlow", s.value.unit, s.value.period_end, fy,
-                             s.value.value - cx[fy].value.value)
+                             s.value.value - cx[s.value.period_end].value.value)
         # 파생값이므로 두 원천을 모두 밝힌다. 한쪽만 인용하면 출처가 사실과 달라진다.
         out.append(Sourced(fact, primary_api(
             f"{NAME} FCF=OCF−CapEx (파생)",
             s.source.locator.url or "",
-            section=f"FY{fy} 10-K · OCF−CapEx 파생 (CapEx: PaymentsToAcquirePropertyPlantAndEquipment)",
+            section=(f"기간종료 {s.value.period_end} · OCF−CapEx 파생 "
+                     "(CapEx: PaymentsToAcquirePropertyPlantAndEquipment)"),
         )))
     return out or Unavailable(f"{ticker} FreeCashFlow", "OCF/CapEx 연도 교집합 없음")
 
