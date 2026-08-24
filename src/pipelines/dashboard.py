@@ -90,8 +90,8 @@ h3{{font-size:.82rem;font-weight:650;color:var(--mut);margin:1rem 0 .5rem;
        items=d; draw(t);
      }}).catch(function(){{
        items=[]; sr.hidden=true;
-       msg('검색은 로컬 서버에서만 동작합니다 — 터미널에서 python3 -m src.pipelines.serve 실행 후 '
-          +'http://127.0.0.1:8766 으로 접속하세요.', true);
+       msg('이 파일을 직접 열면 검색이 동작하지 않습니다. 터미널에서 '
+          +'python3 -m src.pipelines.serve 를 실행하고 http://127.0.0.1:8766 으로 접속하세요.', true);
      }});
    }},160);
  }});
@@ -264,22 +264,6 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                      '후보로 두고 관측 가능한 이벤트를 태그로 붙였습니다. 예측이 아닙니다.</p>'
                      + _table(["종목", "현재가", "변동", "왜 봐야 하나"], rows, numeric_from=1)
                      + "</section>")
-            # 시나리오 카드
-            cards = [x for x in ranked if x.scenarios]
-            for x in cards[:3]:
-                srows = [[escape(s.label), f"{s.move:+.1%}", f"{s.price:,.2f}",
-                          f'<span class="src">{escape(s.basis)}</span>']
-                         for s in x.scenarios]
-                P.append(f'<section><h2>{escape(x.name)} '
-                         f'<span class="chip">{escape(x.ticker)}</span> 시나리오</h2>'
-                         f'<p class="src" style="margin:0 0 .7rem">'
-                         f'{escape(x.stat.summary())} · 표본 {x.stat.n}회</p>'
-                         + _table(["구간", "변동", "가격", "근거"], srows, numeric_from=1)
-                         + '<p class="src" style="margin-top:.7rem">이 구간은 '
-                           '<b>이 종목이 과거 실적에 얼마나 움직였는가</b>입니다. '
-                           '이번에도 그럴 거라는 뜻이 아니며, 방향은 알 수 없습니다.</p>'
-                         + "</section>")
-
     # 액션 신호
     watch_tickers = {w.value.ticker for w in b.watch}
     shown = [s for s in b.signals

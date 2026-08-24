@@ -53,6 +53,16 @@ button.del{{border-color:var(--warn);color:var(--warn);padding:.5rem .7rem}}
  padding:.7rem .95rem;border-radius:0 5px 5px 0;font-size:.87rem;white-space:pre-wrap}}
 .msg.bad{{border-left-color:var(--warn);background:var(--warns);color:var(--warn)}}
 @media(max-width:820px){{.row{{grid-template-columns:1fr 1fr;}}}}
+.acw{{position:relative}}
+.ac{{position:absolute;z-index:50;left:0;right:0;top:calc(100% + .2rem);min-width:17rem;
+ background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;
+ box-shadow:0 8px 26px -12px rgba(0,0,0,.35);max-height:240px;overflow-y:auto}}
+.ac div{{padding:.5rem .75rem;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--line2);
+ display:flex;gap:.55rem;align-items:center}}
+.ac div:last-child{{border-bottom:0}}
+.ac div:hover,.ac div.on{{background:var(--card2)}}
+.ac .t{{font-family:"IBM Plex Mono",monospace;font-size:.75rem;color:var(--mut);min-width:5rem}}
+.ac .g{{margin-left:auto;font-size:.68rem;color:var(--mut)}}
 </style></head><body><div class="w">
 <header><h1>포트폴리오 편집</h1>
 <div class="sub">{path} · 저장하면 스냅샷을 남기고 대시보드를 다시 만듭니다</div></header>
@@ -67,7 +77,8 @@ button.del{{border-color:var(--warn);color:var(--warn);padding:.5rem .7rem}}
 <section><h2>안내</h2><ul>
 <li><b>asset_type</b> 이 평가 잣대를 결정합니다 — 개별주·리츠만 역DCF가 가능하고,
  지수·섹터 ETF는 룩스루 대상이며, 원자재 ETF는 실질금리·달러 방향으로 봅니다.</li>
-<li>티커만 넣고 저장하면 종목명을 토스에서 자동으로 채웁니다.</li>
+<li><b>티커 칸에 회사 이름을 입력하면 검색 목록이 뜹니다.</b> 고르면 종목명·시장·통화가 자동으로 채워집니다 (예: "삼성전자", "엔비디아").</li>
+<li>검색 없이 티커만 넣고 저장해도 종목명은 자동으로 채워집니다.</li>
 <li>이 화면은 <code>portfolio/holdings.yaml</code> 을 직접 고칩니다. 파일이 계속 유일한 원본입니다.</li>
 <li>서버는 127.0.0.1 에만 열립니다. 다른 기기에서는 접속되지 않습니다.</li>
 </ul></section>
@@ -76,7 +87,7 @@ button.del{{border-color:var(--warn);color:var(--warn);padding:.5rem .7rem}}
 <script>
 const TYPES={types};
 function rowHtml(i,d){{d=d||{{}};return `<div class="row" data-i="${{i}}">
-<label>티커<input name="ticker_${{i}}" value="${{d.ticker||''}}" placeholder="AAPL / 005930" required></label>
+<label>티커<input class="tk" name="ticker_${{i}}" value="${{d.ticker||''}}" placeholder="검색: 삼성전자 / NVDA" autocomplete="off" required></label>
 <label>종목명 <span style="text-transform:none">(비우면 자동)</span><input name="name_${{i}}" value="${{d.name||''}}"></label>
 <label>자산유형<select name="asset_type_${{i}}">${{TYPES.map(t=>`<option value="${{t}}" ${{d.asset_type===t?'selected':''}}>${{t}}</option>`).join('')}}</select></label>
 <label>시장<select name="market_${{i}}"><option ${{d.market==='US'?'selected':''}}>US</option><option ${{d.market==='KR'?'selected':''}}>KR</option></select></label>
@@ -85,7 +96,53 @@ function rowHtml(i,d){{d=d||{{}};return `<div class="row" data-i="${{i}}">
 <label>통화<input name="currency_${{i}}" value="${{d.currency||'USD'}}"></label>
 <button type="button" class="del" onclick="this.closest('.row').remove()">삭제</button></div>`;}}
 let n={n};
-function addRow(){{document.getElementById('rows').insertAdjacentHTML('beforeend',rowHtml(n++,{{}}));}}
+function addRow(){{document.getElementById('rows').insertAdjacentHTML('beforeend',rowHtml(n++,{{}}));wire();}}
+
+/* ── 티커 자동완성 — 종목명으로 찾아서 선택 ── */
+function esc(s){{return s.replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c]));}}
+function wire(){{
+ document.querySelectorAll('input.tk').forEach(function(inp){{
+   if(inp.dataset.wired) return; inp.dataset.wired='1';
+   var lab=inp.closest('label'); lab.classList.add('acw');
+   var box=document.createElement('div'); box.className='ac'; box.hidden=true; lab.appendChild(box);
+   var items=[],cur=-1,timer=null;
+   function draw(){{
+     if(!items.length){{box.hidden=true;return;}}
+     box.innerHTML=items.map((r,i)=>'<div class="'+(i===cur?'on':'')+'" data-i="'+i+'">'
+       +'<span class="t">'+esc(r.s)+'</span><span>'+esc(r.n)+'</span>'
+       +'<span class="g">'+esc(r.m)+'</span></div>').join('');
+     box.hidden=false;
+     [...box.children].forEach(el=>el.onclick=()=>pick(items[+el.dataset.i]));
+   }}
+   function pick(r){{
+     inp.value=r.s; box.hidden=true;
+     var row=inp.closest('.row');
+     var nm=row.querySelector('input[name^="name_"]'); if(nm&&!nm.value) nm.value=r.n;
+     var mk=row.querySelector('select[name^="market_"]');
+     if(mk) mk.value=(r.m==='KOSPI'||r.m==='KOSDAQ')?'KR':'US';
+     var cu=row.querySelector('input[name^="currency_"]');
+     if(cu) cu.value=(r.m==='KOSPI'||r.m==='KOSDAQ')?'KRW':'USD';
+   }}
+   inp.addEventListener('input',function(){{
+     var t=inp.value.trim(); cur=-1;
+     if(timer) clearTimeout(timer);
+     if(t.length<1){{items=[];box.hidden=true;return;}}
+     timer=setTimeout(function(){{
+       fetch('/api/search?q='+encodeURIComponent(t)).then(x=>x.json())
+        .then(function(d){{items=d;draw();}}).catch(function(){{items=[];box.hidden=true;}});
+     }},160);
+   }});
+   inp.addEventListener('keydown',function(e){{
+     if(box.hidden) return;
+     if(e.key==='ArrowDown'){{cur=Math.min(cur+1,items.length-1);draw();e.preventDefault();}}
+     else if(e.key==='ArrowUp'){{cur=Math.max(cur-1,0);draw();e.preventDefault();}}
+     else if(e.key==='Enter'){{if(cur>=0){{pick(items[cur]);e.preventDefault();}}}}
+     else if(e.key==='Escape') box.hidden=true;
+   }});
+   inp.addEventListener('blur',function(){{setTimeout(()=>box.hidden=true,180);}});
+ }});
+}}
+wire();
 </script></body></html>"""
 
 
@@ -93,7 +150,7 @@ def _rows_html(holdings: list[dict]) -> str:
     out = []
     for i, h in enumerate(holdings):
         out.append(f'''<div class="row" data-i="{i}">
-<label>티커<input name="ticker_{i}" value="{h['ticker']}" required></label>
+<label>티커<input class="tk" name="ticker_{i}" value="{h['ticker']}" autocomplete="off" required></label>
 <label>종목명 <span style="text-transform:none">(비우면 자동)</span><input name="name_{i}" value="{h['name']}"></label>
 <label>자산유형<select name="asset_type_{i}">''' +
             "".join(f'<option value="{t.value}"{" selected" if h["asset_type"] == t.value else ""}>{t.value}</option>'
@@ -188,6 +245,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        if self.path.startswith("/api/search"):
+            import json as _json
+            import urllib.parse as _up
+            from .serve import search
+            q = _up.parse_qs(_up.urlparse(self.path).query).get("q", [""])[0]
+            body = _json.dumps(search(q), ensure_ascii=False).encode("utf-8")
+            self._send(body, "application/json; charset=utf-8")
+            return
         if self.path.startswith("/dashboard"):
             f = Path("dashboard/index.html")
             if f.exists():

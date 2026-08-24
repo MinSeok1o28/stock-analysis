@@ -37,7 +37,8 @@ python3 -m src.pipelines.event_scanner      # 지금 볼 종목 자동 선정 �
 python3 -m src.pipelines.stock_page NVDA    # 종목 상세 → dashboard/stocks/NVDA.html
 python3 -m src.pipelines.company_decoder AAPL  # 기업 해독 카드 → reports/cards/
 python3 -m src.pipelines.story_reader NVDA  # 3개년 10-K 문구 변화 → reports/story/
-python3 -m src.pipelines.serve              # 대시보드 + 종목 검색 (127.0.0.1:8766)
+python3 -m src.pipelines.serve              # 대시보드 + 종목 검색 + 서사 자동작성 (127.0.0.1:8766)
+python3 -m src.pipelines.narrator TSLA      # 서사만 따로 생성
 python3 -m src.pipelines.editor             # 포트폴리오 편집 UI (127.0.0.1:8765)
 python3 -m src.pipelines.dashboard --public # 개인 정보 뺀 공개용 → dashboard/public.html
 ```
@@ -142,6 +143,7 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | **이벤트 스캐너 + 과거 반응 시나리오** | 동작 · SEC 8-K + 일봉 · 키 불필요 |
 | **종목 상세 페이지 (사실 + 서사)** | 동작 · `dashboard/stocks/<티커>.html` |
 | **종목 검색 + 온디맨드 생성** | 동작 · 7,673종목 자동완성 · 로컬 서버 필요 |
+| **서사 자동 작성** | 동작 · `claude` CLI 호출 · 별도 API 키 불필요 |
 | 이익-현금 정합성 경고 | 동작 · 미국 |
 | OpenDART (한국 재무·공시목록) | 동작 · 무료 키 · 본문 파싱은 미구현 |
 | 어닝콜 트랜스크립트 | 미구현 (무료 소스 없음) |

@@ -84,21 +84,35 @@ def search(q: str, limit: int = 12) -> list[dict]:
     return [{**r, "ready": (STOCKS / f"{r['s']}.html").exists()} for r in out]
 
 
-def generate(ticker: str, *, with_story: bool = False) -> dict:
-    """종목 페이지를 만든다. 이미 생성 중이면 중복 실행하지 않는다."""
+def generate(ticker: str, *, with_story: bool = False, narrate: bool = True) -> dict:
+    """종목 페이지를 만든다.
+
+    narrate=True 면 서사가 없을 때 Claude CLI 를 호출해 해석까지 쓴다.
+    사실(파이프라인) → 서사(Claude) → 렌더 순서다.
+    """
     tk = ticker.upper()
     with _lock:
         if tk in _building:
             return {"ok": False, "error": "이미 생성 중입니다"}
         _building.add(tk)
     try:
-        from . import stock_page as sp
+        from . import narrator, stock_page as sp
+        note = ""
+        if narrate:
+            from ..narrative_io import load as load_nar
+            if load_nar(tk).is_empty:
+                if narrator.available():
+                    w = narrator.write(tk)
+                    note = ("서사 작성 완료" if not isinstance(w, Unavailable)
+                            else f"서사 실패({str(w)[:70]}) — 사실만 표시")
+                else:
+                    note = "claude CLI 없음 — 사실만 표시"
         pg = sp.build(tk, date.today(), with_story=with_story)
         if isinstance(pg, Unavailable):
             return {"ok": False, "error": str(pg)}
         dest = sp.render(pg)
         return {"ok": True, "url": f"/stocks/{tk}.html",
-                "narrative": not pg.narrative.is_empty,
+                "narrative": not pg.narrative.is_empty, "note": note,
                 "size": dest.stat().st_size}
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -149,11 +163,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/search":
             self._json(search(q.get("q", [""])[0])); return
 
+        if path == "/api/status":
+            from . import narrator
+            self._json({"universe": len(load_universe()),
+                        "narrator": narrator.available()}); return
+
         if path == "/api/generate":
             tk = (q.get("t", [""])[0] or "").strip().upper()
             if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", tk):
                 self._json({"ok": False, "error": "티커 형식이 올바르지 않습니다"}, 400); return
-            self._json(generate(tk)); return
+            self._json(generate(tk, narrate=("nonarr" not in q))); return
 
         if path.startswith("/stocks/"):
             name = Path(path).name
@@ -174,7 +193,9 @@ class Handler(BaseHTTPRequestHandler):
 def serve(host: str = HOST, port: int = PORT) -> None:
     n = len(load_universe())
     print(f"투자 리서치 대시보드 → http://{host}:{port}")
+    from . import narrator
     print(f"  종목 검색 인덱스 {n:,}개 " + ("(토스 마스터)" if n else "— 미확보"))
+    print(f"  서사 자동 작성: {'가능 (claude CLI)' if narrator.available() else '불가 — 사실만 표시'}")
     print("  127.0.0.1 에만 열립니다. 종료: Ctrl+C")
     try:
         ThreadingHTTPServer((host, port), Handler).serve_forever()
