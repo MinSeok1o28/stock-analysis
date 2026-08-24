@@ -1,0 +1,46 @@
+# ══ 개인 데이터: 절대 커밋하지 않는다 ══════════════════════════
+# 이 저장소는 '프레임'만 공개한다.
+# 보유 종목·산출물·자격증명은 각자 로컬에만 둔다.
+#
+# 주의: .gitignore 는 '#' 로 시작하는 줄만 주석이다.
+#       패턴 뒤에 인라인 주석을 붙이면 패턴이 무효화된다.
+
+# API 키
+.env
+
+# 실제 보유 종목 (holdings.example.yaml 참고)
+portfolio/holdings.yaml
+
+# 관심 종목 (watchlist.example.yaml 참고)
+portfolio/watchlist.yaml
+
+# 보유 이력
+portfolio/snapshots/*.yaml
+
+# 수동 공급 ETF 구성종목
+portfolio/etf_holdings/*.csv
+
+# 무엇을 언제 어디서 받았는지 (개인 사용 기록)
+ledger/*.jsonl
+
+# ══ 생성물: 실행하면 다시 만들어진다 ═══════════════════════════
+
+# API 캐시·원문
+data/
+
+# 날짜별 리포트 (개인 데이터 포함)
+reports/**/*.md
+
+# 대시보드 (개인 데이터 포함)
+dashboard/*.html
+
+*.bak
+*.yaml.bak
+
+# ══ python ═══════════════════════════════════════════════════
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/

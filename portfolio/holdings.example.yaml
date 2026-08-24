@@ -1,0 +1,21 @@
+# 이 파일을 portfolio/holdings.yaml 로 복사한 뒤 실제 보유로 바꾸세요.
+#   cp portfolio/holdings.example.yaml portfolio/holdings.yaml
+# 또는 브라우저 편집기를 쓰세요:
+#   python3 -m src.pipelines.editor   →  http://127.0.0.1:8765
+#
+# asset_type 이 평가 잣대를 결정합니다 (src/models.py):
+#   single_stock / reit   → 펀더멘털 + 역DCF 가능
+#   index_etf / sector_etf → 지수 총계로 평가, ETF 룩스루 대상
+#   commodity_etf         → 펀더멘털 없음. 실질금리·달러 방향으로 평가
+#   bond_etf              → 듀레이션·만기수익률
+#   cash                  → 기준금리
+# market: US | KR
+
+updated: 2026-01-01
+base_currency: KRW
+
+holdings:
+  - {ticker: AAPL,     name: 애플,          asset_type: single_stock,  market: US, quantity: 10, avg_cost: 180.0, currency: USD}
+  - {ticker: SPY,      name: S&P 500 ETF,   asset_type: index_etf,     market: US, quantity: 5,  avg_cost: 520.0, currency: USD}
+  - {ticker: IAU,      name: 금 ETF,        asset_type: commodity_etf, market: US, quantity: 20, avg_cost: 44.0,  currency: USD}
+  - {ticker: '005930', name: 삼성전자,       asset_type: single_stock,  market: KR, quantity: 10, avg_cost: 70000, currency: KRW}

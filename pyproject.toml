@@ -1,0 +1,18 @@
+[project]
+name = "stock-analysis"
+version = "0.1.0"
+description = "개인 투자 리서치 시스템 — 리서치·정리·계산만. 매매 판단은 하지 않는다."
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "PyYAML>=6.0",
+    "Jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+# 1차 공시 파싱을 라이브러리로 대체하고 싶을 때. 현재 sources/ 는 stdlib+requests 로 자족한다.
+filings = ["edgartools>=3.0", "OpenDartReader>=0.2"]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
