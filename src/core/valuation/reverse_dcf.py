@@ -207,6 +207,95 @@ def wacc_sensitivity(
     return rows
 
 
+@dataclass(frozen=True)
+class GrowthScenario:
+    """성장률 가정별 산술. **예측이 아니다.**
+
+    "이렇게 될 것이다"가 아니라 "이 가정이 맞다면 이 가격이 성립한다"이다.
+    컨센서스가 없어도 만들 수 있고, 방향을 제시하지 않는다.
+    """
+
+    growth: float
+    enterprise_value: float
+    equity_value: float
+    price: float
+    vs_current: float | None      # 현재가 대비
+    label: str = ""
+
+    def __str__(self) -> str:
+        return (f"성장률 {self.growth:.0%} → 주가 {self.price:,.2f}"
+                + (f" ({self.vs_current:+.1%})" if self.vs_current is not None else ""))
+
+
+def price_for_growth(
+    growth: float,
+    fcf0: float,
+    wacc: float,
+    shares: float,
+    *,
+    net_debt: float = 0.0,
+    terminal_growth: float = 0.025,
+    years: int = 10,
+    current_price: float | None = None,
+    label: str = "",
+) -> GrowthScenario:
+    """성장률을 가정하면 정당화되는 주가를 역산한다 (역DCF 의 순방향).
+
+        기업가치 = Σ FCF·(1+g)ᵗ/(1+w)ᵗ + 터미널PV
+        주주가치 = 기업가치 − 순부채
+        주가     = 주주가치 / 주식수
+    """
+    ev = present_value(fcf0, growth, wacc, terminal_growth, years)
+    eq = ev - net_debt
+    px = eq / shares if shares else 0.0
+    vs = (px / current_price - 1) if current_price else None
+    return GrowthScenario(growth, ev, eq, px, vs, label)
+
+
+#: 기본 가정 구간. 실제로는 과거 성장률을 참고해 호출부가 조정한다.
+DEFAULT_GROWTH_GRID: tuple[float, ...] = (0.0, 0.05, 0.10, 0.15, 0.20)
+
+
+def growth_scenarios(
+    fcf0: float,
+    wacc: float,
+    shares: float,
+    *,
+    net_debt: float = 0.0,
+    current_price: float | None = None,
+    grid: tuple[float, ...] | None = None,
+    implied: float | None = None,
+    historical: list[tuple[str, float]] | None = None,
+    terminal_growth: float = 0.025,
+    years: int = 10,
+) -> list[GrowthScenario]:
+    """가정 성장률 격자 + 의미 있는 기준점(시장 요구·과거 실적)을 함께 계산한다.
+
+    격자만 주면 추상적이다. "시장이 요구하는 6.4%" 와 "과거 실적 6.1%" 를
+    같은 표에 놓아야 판단 재료가 된다.
+    """
+    points: list[tuple[float, str]] = [(g, "") for g in (grid or DEFAULT_GROWTH_GRID)]
+    if implied is not None:
+        points.append((implied, "시장이 요구하는 성장률"))
+    for name, g in (historical or []):
+        points.append((g, f"과거 실적 {name}"))
+
+    seen: dict[float, str] = {}
+    for g, lab in points:
+        key = round(g, 4)
+        if key not in seen or (lab and not seen[key]):
+            seen[key] = lab
+    out = []
+    for g in sorted(seen):
+        try:
+            out.append(price_for_growth(g, fcf0, wacc, shares, net_debt=net_debt,
+                                        terminal_growth=terminal_growth, years=years,
+                                        current_price=current_price, label=seen[g]))
+        except ValueError:
+            continue
+    return out
+
+
 def gap_summary(implied: float, historical: float | None) -> str:
     """시장 요구 성장률과 과거 실적의 격차. 판단이 아니라 격차만 서술한다."""
     if historical is None:

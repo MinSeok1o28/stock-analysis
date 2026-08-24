@@ -33,6 +33,10 @@ reports/**/*.md
 
 # 대시보드 (개인 데이터 포함)
 dashboard/*.html
+dashboard/stocks/*.html
+
+# 서사 — 본인이 쓴 해석 (예시는 narratives.example/ 로 공개)
+portfolio/narratives/*.yaml
 
 *.bak
 *.yaml.bak

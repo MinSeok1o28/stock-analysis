@@ -61,3 +61,73 @@ def fcf_yield(fcf: float, market_cap: float) -> float | None:
 
 def per_share(total: float, shares: float) -> float | None:
     return total / shares if shares else None
+
+
+@dataclass(frozen=True)
+class EarningsQuality:
+    """이익과 현금이 같은 방향으로 가는가.
+
+    영상 원본의 규칙: "이익이랑 현금이 따로 놀면 경고를 띄우라."
+    순이익은 늘었는데 영업현금흐름이 줄면 회계상 부풀림 가능성이 있다.
+    반대(현금은 느는데 이익이 주는 것)는 일회성 손상·상각일 수 있다.
+    """
+
+    years: int
+    same_direction: int
+    ni_cagr: float | None
+    ocf_cagr: float | None
+    latest_gap: float | None      # 최근 연도 (순이익 증감률 − OCF 증감률)
+    flag: str                     # ok | warn | insufficient
+
+    @property
+    def is_warning(self) -> bool:
+        return self.flag == "warn"
+
+    def __str__(self) -> str:
+        if self.flag == "insufficient":
+            return "이익-현금 정합성: 표본 부족"
+        base = (f"최근 {self.years}년 중 {self.same_direction}년이 같은 방향")
+        if self.ni_cagr is not None and self.ocf_cagr is not None:
+            base += f" · 순이익 CAGR {self.ni_cagr:+.1%} vs 영업현금흐름 {self.ocf_cagr:+.1%}"
+        return ("⚠ 이익과 현금이 따로 움직인다 — " + base) if self.is_warning else \
+               ("이익과 현금이 같은 방향 — " + base)
+
+
+def earnings_quality(net_income: list[tuple[str, float]],
+                     operating_cf: list[tuple[str, float]],
+                     *, min_years: int = 3, gap_threshold: float = 0.25
+                     ) -> EarningsQuality:
+    """순이익 vs 영업현금흐름 정합성.
+
+    두 계열의 기간이 겹치는 구간만 본다. 방향 일치율과 최근 증감률 격차로 판정한다.
+    """
+    ocf = dict(operating_cf)
+    pairs = [(k, v, ocf[k]) for k, v in net_income if k in ocf]
+    if len(pairs) < min_years:
+        return EarningsQuality(len(pairs), 0, None, None, None, "insufficient")
+
+    same = 0
+    for (_, n0, o0), (_, n1, o1) in zip(pairs, pairs[1:]):
+        if (n1 - n0) * (o1 - o0) > 0:
+            same += 1
+    total = len(pairs) - 1
+
+    def _cagr(vals: list[float]) -> float | None:
+        if len(vals) < 2 or vals[0] <= 0 or vals[-1] <= 0:
+            return None
+        return (vals[-1] / vals[0]) ** (1 / (len(vals) - 1)) - 1
+
+    ni_c = _cagr([p[1] for p in pairs])
+    ocf_c = _cagr([p[2] for p in pairs])
+
+    gap = None
+    if len(pairs) >= 2:
+        n0, n1 = pairs[-2][1], pairs[-1][1]
+        o0, o1 = pairs[-2][2], pairs[-1][2]
+        if n0 and o0:
+            gap = ((n1 - n0) / abs(n0)) - ((o1 - o0) / abs(o0))
+
+    warn = (same / total < 0.5) if total else False
+    if gap is not None and abs(gap) >= gap_threshold:
+        warn = True
+    return EarningsQuality(total, same, ni_c, ocf_c, gap, "warn" if warn else "ok")

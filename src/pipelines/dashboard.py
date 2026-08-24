@@ -179,8 +179,13 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
         ranked = [x for x in scan.candidates if x.events and not (public and x.held)]
         if ranked:
             rows = []
+            import os
             for x in ranked:
                 nm = _name_cell(x.ticker, b.names)
+                if os.path.exists(f"dashboard/stocks/{x.ticker}.html"):
+                    nm = (f'<a href="stocks/{escape(x.ticker)}.html" target="_blank" '
+                          f'style="color:inherit;text-decoration:none;border-bottom:'
+                          f'1px dotted var(--acc)">{nm} ↗</a>')
                 if x.held and not public:
                     nm += ' <span class="chip">보유</span>'
                 tags = " ".join(
@@ -277,6 +282,18 @@ if __name__ == "__main__":
         (ck.REPORT_DIR / f"{on.isoformat()}-cockpit.md").write_text(
             ck.to_markdown(c), encoding="utf-8")
     scan = es.run(on)
+    # 이벤트가 있는 상위 종목의 상세 페이지를 생성한다 (스토리 리더는 무거워 제외)
+    from . import stock_page as sp
+    made = []
+    for cand in [x for x in scan.candidates if x.events][:5]:
+        try:
+            pg = sp.build(cand.ticker, on, with_story=False)
+            if not isinstance(pg, Unavailable):
+                sp.render(pg); made.append(cand.ticker)
+        except Exception as exc:                     # 한 종목 실패가 전체를 막지 않게
+            print(f"  ⚠ {cand.ticker} 상세 페이지 실패: {type(exc).__name__}")
+    if made:
+        print(f"  종목 페이지 {len(made)}개: {', '.join(made)}")
     (es.REPORT_DIR).mkdir(parents=True, exist_ok=True)
     (es.REPORT_DIR / f"{on.isoformat()}-events.md").write_text(
         es.to_markdown(scan), encoding="utf-8")
