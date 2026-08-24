@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import date
@@ -29,7 +30,7 @@ from ..core.valuation.reverse_dcf import (ConvergenceError, basis_comparison,
 from ..models import Market
 from ..narrative_io import Narrative, load as load_narrative
 from ..provenance import Sourced, Unavailable
-from ..render.dashboard import _CSS, _kpi, _table
+from ..render.dashboard import _CSS, FONT_LINK, _kpi, _table
 from ..sources import fred, prices, sec_edgar, toss
 from . import company_decoder as cd
 from . import story_reader as sr
@@ -141,26 +142,44 @@ def build(ticker: str, on: date | None = None, *, with_story: bool = True) -> St
 # ── 렌더 ────────────────────────────────────────────────────────
 
 _EXTRA_CSS = """
-.hero{background:var(--card);border:1px solid var(--line2);border-radius:8px;padding:1.3rem 1.4rem}
-.hero .one{font-size:1.12rem;line-height:1.6;font-weight:500}
-.interp{border-left:3px solid var(--acc);background:var(--accs);padding:.75rem 1rem;
- border-radius:0 5px 5px 0;font-size:.9rem;line-height:1.65;white-space:pre-wrap}
-.fact{font-size:.86rem;color:var(--fg2)}
-.risk{background:var(--card2);border:1px solid var(--line2);border-radius:6px;
- padding:.85rem 1rem;display:flex;flex-direction:column;gap:.3rem}
-.risk .t{font-weight:650;font-size:.92rem}
-.risk .e{font-size:.72rem;color:var(--mut)}
+/* ── 한 줄 요약 ─────────────────────────────────────── */
+.hero{background:linear-gradient(180deg,var(--accs),var(--card));
+  border:1px solid var(--line2);border-left:4px solid var(--acc);
+  border-radius:10px;padding:1.5rem 1.6rem}
+.hero .one{font-size:1.16rem;line-height:1.8;font-weight:500;color:var(--fg)}
+.hero .one strong{font-weight:700}
+
+/* ── 사실/해석 태그 ─────────────────────────────────── */
+.tag-i,.tag-f{display:inline-block;font-size:.66rem;font-weight:700;letter-spacing:.04em;
+  padding:.1rem .4rem;border-radius:3px;margin-right:.45rem;vertical-align:.08em}
+.tag-i{background:var(--accs);color:var(--acc);border:1px solid var(--acc)}
+.tag-f{background:var(--card2);color:var(--mut);border:1px solid var(--line2)}
+
+.interp{border-left:3px solid var(--acc);background:var(--accs);
+  padding:.95rem 1.15rem;border-radius:0 8px 8px 0;font-size:.92rem;line-height:1.85}
+.interp p{margin:0 0 .7rem} .interp p:last-child{margin-bottom:0}
+
+/* ── 리스크 카드 ────────────────────────────────────── */
+.risk{background:var(--card2);border:1px solid var(--line2);border-radius:9px;
+  padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.45rem;
+  border-top:3px solid var(--up)}
+.risk .t{font-weight:700;font-size:.95rem;line-height:1.5;color:var(--fg)}
+.risk .d{font-size:.86rem;line-height:1.75;color:var(--fg2)}
+.risk .e{font-size:.72rem;color:var(--mut);border-top:1px solid var(--line2);
+  padding-top:.45rem;margin-top:.15rem}
+
 .miss{border-left:3px solid var(--warn);background:var(--warns);color:var(--warn);
- padding:.75rem 1rem;border-radius:0 5px 5px 0;font-size:.86rem}
-.grid3{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
-.up{color:var(--up)} .down{color:var(--warn)}
+  padding:.85rem 1.1rem;border-radius:0 8px 8px 0;font-size:.87rem;line-height:1.7}
+.grid3{display:grid;gap:.9rem;grid-template-columns:repeat(auto-fit,minmax(255px,1fr))}
 a.back{color:var(--fg2);text-decoration:none;font-size:.8rem;border:1px solid var(--line2);
- border-radius:99px;padding:.25rem .8rem;background:var(--card)}
+  border-radius:99px;padding:.3rem .85rem;background:var(--card);align-self:flex-start}
 a.back:hover{border-color:var(--acc);color:var(--acc)}
 """
 
+
 _TPL = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+{fonts}
 <title>{name} ({ticker}) — 종목 분석</title><style>{css}{extra}</style></head>
 <body><div class="w">
 <header><a class="back" href="../index.html">← 대시보드</a>
@@ -174,10 +193,24 @@ _TPL = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 
 
 def _pct(x, cls=True):
+    """등락 표기 — 상승 빨강 ▲ · 하락 파랑 ▼."""
     if x is None:
         return '<span class="src">—</span>'
-    c = "up" if x > 0 else ("down" if x < 0 else "")
-    return f'<span class="{c}">{x:+.2%}</span>' if cls else f"{x:+.2%}"
+    if not cls:
+        return f"{x:+.2%}"
+    c = "up" if x > 0 else ("down" if x < 0 else "flat")
+    arrow = "▲" if x > 0 else ("▼" if x < 0 else "–")
+    return f'<span class="{c}">{arrow} {abs(x):.2%}</span>'
+
+
+_BOLD = re.compile(r"\*\*(.+?)\*\*")
+
+
+def rich(text: str) -> str:
+    """서사 본문의 **강조** 를 굵은 글씨로. escape 후 치환해 주입을 막는다."""
+    out = escape(text.strip())
+    out = _BOLD.sub(r"<strong>\1</strong>", out)
+    return out.replace("\n\n", "</p><p>").replace("\n", "<br>")
 
 
 def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
@@ -189,7 +222,7 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
     # ① 한 줄 요약 (해석)
     if n.one_liner:
         d, stale = n.staleness(p.on)
-        P.append(f'<div class="hero"><div class="one">{escape(n.one_liner)}</div>'
+        P.append(f'<div class="hero"><div class="one">{rich(n.one_liner)}</div>'
                  f'<div class="src" style="margin-top:.5rem">[해석] {escape(n.author)} 작성 · '
                  f'{n.updated} ({d}일 전){" · 갱신 권고" if stale else ""}</div></div>')
     else:
@@ -213,7 +246,8 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
     # ② 돈 버는 구조 — 해석 + 세그먼트 표(사실)
     body = []
     if n.how_it_makes_money:
-        body.append(f'<div class="interp">[해석] {escape(n.how_it_makes_money)}</div>')
+        body.append('<div class="interp"><span class="tag-i">해석</span>'
+                    f'<p>{rich(n.how_it_makes_money)}</p></div>')
     if n.mermaid:
         body.append(f'<pre class="mermaid">{escape(n.mermaid)}</pre>')
     if c.segments and getattr(c.segments, "tables", None):
@@ -238,8 +272,10 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
             if gaps:
                 body.append('<h3>매출 비중 vs 이익 기여</h3><ul>')
                 for g, sh, os_ in sorted(gaps, key=lambda r: -(r[2]-r[1])):
-                    body.append(f"<li>[사실] <b>{escape(g)}</b> — 매출 {sh:.1%} / "
-                                f"영업이익 {os_:.1%} ({os_-sh:+.1%}p)</li>")
+                    cls = "up" if os_ > sh else "down"
+                    body.append(f'<li><span class="tag-f">사실</span><b>{escape(g)}</b> — '
+                                f'매출 {sh:.1%} / 영업이익 {os_:.1%} '
+                                f'<span class="{cls}">({os_-sh:+.1%}p)</span></li>')
                 body.append("</ul>")
     if body:
         P.append("<section><h2>이 회사는 뭘로 돈을 버나</h2>" + "".join(body) + "</section>")
@@ -262,11 +298,12 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
                _table(["회계연도", "매출", "YoY", "영업이익", "순이익", "FCF"], rows)]
         if p.quality:
             cls = "miss" if p.quality.is_warning else "interp"
-            sec.append(f'<div class="{cls}" style="margin-top:.8rem">'
-                       f'[사실] {escape(str(p.quality))}</div>')
+            sec.append(f'<div class="{cls}" style="margin-top:.9rem">'
+                       f'<span class="tag-f">사실</span>{escape(str(p.quality))}</div>')
         if c.outliers:
             sec.append('<h3>이상치</h3><ul>'
-                       + "".join(f"<li>[사실] {escape(str(o))}</li>" for o in c.outliers) + "</ul>")
+                       + "".join(f'<li><span class="tag-f">사실</span>{escape(str(o))}</li>'
+                                 for o in c.outliers) + "</ul>")
         if p.stat and p.stat.n:
             sec.append("<h3>과거 실적 발표 시장 반응</h3>")
             sec.append(_table(["실적일", "반응일", "변동", "거래량"],
@@ -278,8 +315,8 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
     if p.implied is not None or p.basis:
         sec = ["<section><h2>가격이 무엇을 요구하나</h2>"]
         if p.implied is not None:
-            sec.append(f'<p>[사실] 현재 기업가치가 성립하려면 향후 10년 연평균 '
-                       f'<b>{p.implied:.1%}</b> 의 FCF 성장이 필요합니다 '
+            sec.append(f'<p><span class="tag-f">사실</span>현재 기업가치가 성립하려면 '
+                       f'향후 10년 연평균 <b>{p.implied:.1%}</b> 의 FCF 성장이 필요합니다 '
                        f'(WACC {p.wacc:.1%}, 영구성장 2.5%).</p>')
         if p.axes:
             sec.append("<h3>과거 실제 성장률 — 구간별</h3>")
@@ -328,7 +365,8 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
     # ⑥ 서사 (해석) + 공시 문구 변화 (사실)
     sec = []
     if n.story:
-        sec.append(f'<div class="interp">[해석] {escape(n.story)}</div>')
+        sec.append('<div class="interp"><span class="tag-i">해석</span>'
+                   f'<p>{rich(n.story)}</p></div>')
     if p.story and p.story.pairs:
         for pair in p.story.pairs:
             ms = pair.material_sections
@@ -342,7 +380,8 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
                                 for w, a, b in s.removed_hedges[:3]))
                 if s.new_risks:
                     bits.append("신규 위험 " + ", ".join(s.new_risks))
-                sec.append(f"<li>[사실] <b>Item {escape(s.key)}</b> {escape(' · '.join(bits))}</li>")
+                sec.append(f'<li><span class="tag-f">사실</span><b>Item {escape(s.key)}</b> '
+                           f"{escape(' · '.join(bits))}</li>")
             sec.append("</ul>")
     if sec:
         P.append("<section><h2>지난 3년의 이야기</h2>" + "".join(sec) + "</section>")
@@ -351,8 +390,8 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
     if n.risks:
         cards = "".join(
             f'<div class="risk"><span class="t">{i+1}. {escape(r.title)}</span>'
-            + (f"<span>{escape(r.detail)}</span>" if r.detail else "")
-            + (f'<span class="e">근거: {escape(r.evidence)}</span>' if r.evidence else "")
+            + (f'<span class="d">{rich(r.detail)}</span>' if r.detail else "")
+            + (f'<span class="e">근거 · {escape(r.evidence)}</span>' if r.evidence else "")
             + "</div>" for i, r in enumerate(n.risks[:3]))
         P.append('<section><h2>이 회사가 망하는 시나리오</h2>'
                  '<p class="src">[해석] 10-K Item 1A 에 수십 개가 나열돼 있지만 '
@@ -367,7 +406,8 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
         miss.append("DART 사업보고서 본문 파싱 미구현 — 사업 설명·문구 변화를 만들 수 없다")
     if n.watch_next:
         P.append("<section><h2>다음에 지켜볼 것</h2><ul>"
-                 + "".join(f"<li>[해석] {escape(x)}</li>" for x in n.watch_next) + "</ul></section>")
+                 + "".join(f'<li><span class="tag-i">해석</span> {rich(x)}</li>'
+                             for x in n.watch_next) + "</ul></section>")
     P.append("<section><h2>이 페이지로 답이 안 나온 것</h2><ul>"
              + "".join(f"<li>{escape(x)}</li>" for x in miss)
              + "".join(f"<li>{escape(x)}</li>" for x in (p.notes + list(c.notes))[:10])
@@ -377,14 +417,24 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
     dest = out_dir / f"{p.ticker}.html"
     sub = (f"{p.on.isoformat()} · {c.info.get('market','')} · "
            f"{c.asset_type.value} · 매매 판단은 사람이 합니다")
-    dest.write_text(_TPL.format(name=escape(name), ticker=escape(p.ticker), css=_CSS,
+    dest.write_text(_TPL.format(name=escape(name), ticker=escape(p.ticker), css=_CSS, fonts=FONT_LINK,
                                 extra=_EXTRA_CSS, sub=escape(sub), body="\n".join(P)),
                     encoding="utf-8")
     return dest
 
 
 if __name__ == "__main__":
-    tk = sys.argv[1] if len(sys.argv) > 1 else "NVDA"
+    tk = (sys.argv[1] if len(sys.argv) > 1 else "NVDA").upper()
+    if "--init" in sys.argv:
+        from ..narrative_io import path_for, template
+        dest = path_for(tk)
+        if dest.exists() and "--force" not in sys.argv:
+            print(f"이미 있습니다: {dest}  (덮어쓰려면 --force)")
+            sys.exit(1)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(template(tk), encoding="utf-8")
+        print(f"✓ 서사 서식 생성: {dest}\n  채운 뒤: python3 -m src.pipelines.stock_page {tk}")
+        sys.exit(0)
     pg = build(tk, with_story=("--no-story" not in sys.argv))
     if isinstance(pg, Unavailable):
         print(pg); sys.exit(1)

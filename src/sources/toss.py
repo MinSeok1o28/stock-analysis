@@ -60,6 +60,7 @@ ALLOWED_PATHS: frozenset[str] = frozenset({
     "/api/v1/market-calendar/US",
     "/api/v1/market-indicators/prices",
     "/api/v1/rankings",
+    "/api/v1/stocks/all",
 })
 
 #: 경로 파라미터가 있는 허용 패턴. 접두사 + 접미사로만 매칭한다 (주문 경로는 걸리지 않는다).
@@ -75,6 +76,7 @@ _INTERVAL = {
     "/api/v1/candles": 0.06,               # MARKET_DATA_CHART 20/s
     "/api/v1/market-indicators/prices": 0.11,  # 10/s
     "/api/v1/stocks": 0.21,                # STOCK 5/s
+    "/api/v1/stocks/all": 1.1,             # STOCK_ALL 1/s
     "/api/v1/exchange-rate": 0.34,         # MARKET_INFO 3/s
 }
 _DEFAULT_INTERVAL = 0.07                    # MARKET_DATA 15/s
@@ -364,6 +366,42 @@ def stock_info(tickers: list[str]) -> Sourced[dict[str, dict]] | Unavailable:
         }
     return (Sourced(out, vendor_api(f"{NAME} 종목정보", _url("/api/v1/stocks", params)))
             if out else Unavailable("종목 정보", f"{NAME} 응답 파싱 실패"))
+
+
+#: 검색 자동완성용 마켓. KR_ETC·US_ETC 는 제외(잡음).
+UNIVERSE_MARKETS = ("KOSPI", "KOSDAQ", "NASDAQ", "NYSE", "AMEX")
+
+
+def universe(markets: tuple[str, ...] = UNIVERSE_MARKETS
+             ) -> Sourced[list[dict]] | Unavailable:
+    """마켓별 종목 마스터. 검색 자동완성의 재료.
+
+    일 배치로 갱신되는 저변동 데이터라 캐시를 길게(1주) 잡는다.
+    마켓당 수천 건이므로 보통주 STOCK 만 받는다.
+    """
+    out: list[dict] = []
+    failed: list[str] = []
+    for m in markets:
+        params = {"market": m, "status": "ACTIVE", "securityType": "STOCK",
+                  "commonShare": "true"}
+        try:
+            payload = _get("/api/v1/stocks/all", params, ttl_sec=604_800)
+        except SourceUnavailable as exc:
+            failed.append(f"{m}({exc})")
+            continue
+        for r in _rows(payload):
+            sym = _pick(r, "symbol")
+            if not sym:
+                continue
+            out.append({"symbol": str(sym).upper(),
+                        "name": _pick(r, "name") or "",
+                        "english_name": _pick(r, "englishName") or "",
+                        "market": _pick(r, "market") or m})
+    if not out:
+        return Unavailable("종목 마스터", f"{NAME}: 전 마켓 실패 {failed}")
+    src = vendor_api(f"{NAME} 종목 마스터 ({len(out):,}종목)",
+                     f"{BASE}/api/v1/stocks/all")
+    return Sourced(out, src)
 
 
 def names(tickers: list[str]) -> dict[str, str]:

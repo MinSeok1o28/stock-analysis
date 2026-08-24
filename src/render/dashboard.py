@@ -17,53 +17,127 @@ OUT = Path("dashboard/index.html")
 DISCLAIMER = ("> 이 문서는 리서치 보조 산출물이며 투자 자문이 아닙니다. 매매 판단은 사람이 합니다. "
               "1차 스크리너로만 사용하고, 판단에 직접 쓰는 숫자는 원문에서 재확인하십시오.")
 
+#: 웹폰트는 있으면 쓰고 없으면(오프라인) 시스템 폰트로 떨어진다.
+FONT_LINK = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
+             '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+             '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
+             'family=Noto+Sans+KR:wght@400;500;700&'
+             'family=IBM+Plex+Mono:wght@400;500;600&display=swap">')
+
 _CSS = """
-:root{--bg:#eef1f3;--card:#fbfcfd;--card2:#e2e8ea;--fg:#141c22;--fg2:#3c4b55;--mut:#68787f;
- --line:#c6d0d5;--line2:#d8e0e4;--acc:#0f6b60;--accs:#d6e8e4;--warn:#8c6518;--warns:#efe3c8;--up:#0f6b60;}
-@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0e151a;--card:#161f26;--card2:#1e2a32;
- --fg:#e4ebee;--fg2:#aebcc4;--mut:#7d8d96;--line:#2b3a43;--line2:#223038;--acc:#4fc4b2;--accs:#12332f;
- --warn:#d6a83f;--warns:#312716;--up:#4fc4b2;}}
-:root[data-theme=dark]{--bg:#0e151a;--card:#161f26;--card2:#1e2a32;--fg:#e4ebee;--fg2:#aebcc4;--mut:#7d8d96;
- --line:#2b3a43;--line2:#223038;--acc:#4fc4b2;--accs:#12332f;--warn:#d6a83f;--warns:#312716;--up:#4fc4b2;}
+/* ── 색 토큰 ─────────────────────────────────────────────
+   한국 관행: 상승 빨강 · 하락 파랑. 쨍하지 않게 채도를 낮췄다.
+   UI 강조(--acc)는 청록이라 빨강·파랑 어느 쪽과도 섞이지 않는다. */
+:root{
+  --bg:#f2f4f5; --card:#fff; --card2:#e8ecee; --fg:#1a2228; --fg2:#43525c;
+  --mut:#75858e; --line:#ccd6db; --line2:#e0e7ea;
+  --acc:#0f7268; --accs:#e0f0ed;
+  --warn:#8a6414; --warns:#f6ecd6;
+  --up:#c2544e;   --ups:#fbeceb;      /* 상승 — 연한 빨강 */
+  --down:#3a6ba6; --downs:#e9f0f8;    /* 하락 — 연한 파랑 */
+  --flat:#75858e;
+}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#0f151a; --card:#18212a; --card2:#212d38; --fg:#e6edf2; --fg2:#b3c1cb;
+  --mut:#7f8f9a; --line:#2c3b47; --line2:#22303b;
+  --acc:#54c9b8; --accs:#123430;
+  --warn:#d9ab45; --warns:#332813;
+  --up:#ef8b84;   --ups:#3a2220;
+  --down:#7fb2e8; --downs:#1b2a3c;
+  --flat:#7f8f9a;
+}}
+:root[data-theme=dark]{
+  --bg:#0f151a; --card:#18212a; --card2:#212d38; --fg:#e6edf2; --fg2:#b3c1cb;
+  --mut:#7f8f9a; --line:#2c3b47; --line2:#22303b;
+  --acc:#54c9b8; --accs:#123430;
+  --warn:#d9ab45; --warns:#332813;
+  --up:#ef8b84;   --ups:#3a2220;
+  --down:#7fb2e8; --downs:#1b2a3c;
+  --flat:#7f8f9a;
+}
+
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--fg);margin:0;padding:2rem 1.25rem 5rem;
- font:16px/1.6 ui-sans-serif,system-ui,"Segoe UI","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased}
-.w{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:2rem}
-header{display:flex;flex-direction:column;gap:.35rem;border-bottom:2px solid var(--fg);padding-bottom:1.1rem}
-h1{font-size:1.5rem;font-weight:650;margin:0;letter-spacing:-.02em}
-h2{font-size:1.05rem;font-weight:650;margin:0 0 .7rem;letter-spacing:-.01em}
-.sub{color:var(--mut);font-size:.83rem}
-.kpis{display:grid;gap:.7rem;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
-.kpi{background:var(--card);border:1px solid var(--line2);border-radius:6px;padding:.85rem .95rem;
- display:flex;flex-direction:column;gap:.2rem}
-.kpi .lab{font-size:.7rem;text-transform:uppercase;letter-spacing:.09em;color:var(--mut)}
-.kpi .val{font-size:1.35rem;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.kpi .delta{font-size:.75rem;color:var(--acc);font-variant-numeric:tabular-nums}
-section{background:var(--card);border:1px solid var(--line2);border-radius:8px;padding:1.15rem 1.25rem}
-.scroll{overflow-x:auto;margin:0 -.4rem;padding:0 .4rem}
-table{border-collapse:collapse;width:100%;min-width:520px;font-size:.86rem}
-th{text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);
- padding:.55rem .6rem;border-bottom:1px solid var(--line);white-space:nowrap}
-td{padding:.55rem .6rem;border-bottom:1px solid var(--line2);vertical-align:top}
+body{
+  background:var(--bg); color:var(--fg); margin:0; padding:2.2rem 1.25rem 6rem;
+  font-family:"Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",
+              ui-sans-serif,system-ui,sans-serif;
+  font-size:16px; line-height:1.75; letter-spacing:-.005em;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+.w{max-width:940px;margin:0 auto;display:flex;flex-direction:column;gap:1.6rem}
+
+/* ── 타이포 ───────────────────────────────────────────── */
+h1{font-size:1.72rem;font-weight:700;margin:0;letter-spacing:-.03em;line-height:1.25}
+h2{font-size:1.14rem;font-weight:700;margin:0 0 1rem;letter-spacing:-.02em;
+   display:flex;align-items:center;gap:.55rem}
+h2::before{content:"";width:3px;height:1.05em;background:var(--acc);border-radius:2px;flex:none}
+h3{font-size:.9rem;font-weight:700;color:var(--fg2);margin:1.4rem 0 .6rem;
+   letter-spacing:-.01em}
+h3:first-child{margin-top:0}
+p{margin:0 0 .8rem} p:last-child{margin-bottom:0}
+strong,b{font-weight:700;color:var(--fg)}
+.sub{color:var(--mut);font-size:.84rem;line-height:1.6}
+.num,td.n,th.n,.kpi .val,.kpi .delta{
+  font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-variant-numeric:tabular-nums;}
+
+/* ── 섹션 ─────────────────────────────────────────────── */
+header{display:flex;flex-direction:column;gap:.4rem;padding-bottom:1.2rem;
+  border-bottom:2px solid var(--fg)}
+section{background:var(--card);border:1px solid var(--line2);border-radius:10px;
+  padding:1.35rem 1.5rem;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) section{box-shadow:none}}
+
+/* ── KPI ──────────────────────────────────────────────── */
+.kpis{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(152px,1fr))}
+.kpi{background:var(--card);border:1px solid var(--line2);border-radius:9px;
+  padding:.9rem 1rem;display:flex;flex-direction:column;gap:.25rem}
+.kpi .lab{font-size:.7rem;font-weight:500;letter-spacing:.05em;color:var(--mut)}
+.kpi .val{font-size:1.4rem;font-weight:600;letter-spacing:-.03em;line-height:1.2}
+.kpi .delta{font-size:.76rem;color:var(--mut)}
+
+/* ── 표 ───────────────────────────────────────────────── */
+.scroll{overflow-x:auto;margin:0 -.5rem;padding:0 .5rem}
+table{border-collapse:collapse;width:100%;min-width:500px;font-size:.87rem}
+th{text-align:left;font-size:.7rem;font-weight:700;letter-spacing:.04em;color:var(--mut);
+  padding:.6rem .7rem;border-bottom:1.5px solid var(--line);white-space:nowrap}
+td{padding:.62rem .7rem;border-bottom:1px solid var(--line2);vertical-align:top;
+  line-height:1.55}
 tbody tr:last-child td{border-bottom:0}
 tbody tr:hover td{background:var(--card2)}
-td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.bar{height:4px;border-radius:2px;background:var(--acc);opacity:.85;min-width:2px}
-.hid{color:var(--acc);font-weight:600}
-.chip{display:inline-block;font-size:.68rem;padding:.1rem .4rem;border-radius:3px;
- background:var(--card2);color:var(--fg2);border:1px solid var(--line2);white-space:nowrap}
-.warn{background:var(--warns);color:var(--warn);border-color:var(--warn)}
+td.n,th.n{text-align:right;white-space:nowrap}
+
+/* ── 등락 색 ──────────────────────────────────────────── */
+.up{color:var(--up);font-weight:600}
+.down{color:var(--down);font-weight:600}
+.flat{color:var(--flat)}
+.up-bg{background:var(--ups)} .down-bg{background:var(--downs)}
+.bar{height:5px;border-radius:3px;background:var(--acc);opacity:.8;min-width:2px}
+
+/* ── 칩·주석 ──────────────────────────────────────────── */
+.chip{display:inline-block;font-size:.68rem;font-weight:500;padding:.14rem .45rem;
+  border-radius:4px;background:var(--card2);color:var(--fg2);
+  border:1px solid var(--line2);white-space:nowrap;letter-spacing:0}
+.chip.warn{background:var(--warns);color:var(--warn);border-color:var(--warn)}
+.chip.up{background:var(--ups);color:var(--up);border-color:var(--up)}
+.chip.down{background:var(--downs);color:var(--down);border-color:var(--down)}
+.src{color:var(--mut);font-size:.72rem;line-height:1.5;word-break:break-all;
+  font-weight:400}
 .note{border-left:3px solid var(--warn);background:var(--warns);color:var(--warn);
- border-radius:0 5px 5px 0;padding:.7rem .9rem;font-size:.85rem}
+  border-radius:0 7px 7px 0;padding:.8rem 1rem;font-size:.86rem;line-height:1.65}
 .note.calm{border-left-color:var(--acc);background:var(--accs);color:var(--fg2)}
-.src{color:var(--mut);font-size:.7rem;word-break:break-all;line-height:1.4}
-ul{margin:0;padding-left:1.1rem;display:flex;flex-direction:column;gap:.4rem;font-size:.88rem}
+ul{margin:0;padding-left:1.15rem;display:flex;flex-direction:column;gap:.45rem;
+  font-size:.89rem;line-height:1.7}
 li::marker{color:var(--acc)}
-footer{color:var(--mut);font-size:.78rem;border-top:1px solid var(--line);padding-top:1rem}
+footer{color:var(--mut);font-size:.78rem;border-top:1px solid var(--line);
+  padding-top:1.2rem;line-height:1.7}
+a{color:var(--acc)}
 """
+
 
 _TPL = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+{fonts}
 <title>포트폴리오 콕핏 — {on}</title><style>{css}</style></head><body><div class="w">
 <header><h1>포트폴리오 콕핏</h1>
 <div class="sub">{on} · 보유 현황 갱신 {updated} · 매매 판단은 사람이 합니다</div></header>
@@ -82,7 +156,9 @@ def _cell(obj: Sourced | Unavailable, fmt: str = "{}") -> str:
 
 
 def _kpi(lab: str, val: str, delta: str = "") -> str:
-    d = f'<span class="delta">{escape(delta)}</span>' if delta else ""
+    """delta 는 이미 마크업일 수 있다(등락 색). 호출부가 escape 책임을 진다."""
+    inner = delta if delta.startswith("<") else escape(delta)
+    d = f'<span class="delta">{inner}</span>' if delta else ""
     return f'<div class="kpi"><span class="lab">{escape(lab)}</span><span class="val">{val}</span>{d}</div>'
 
 
@@ -174,7 +250,7 @@ def render_cockpit(r, out: Path = OUT) -> Path:
                  + "".join(f"<li>{escape(b)}</li>" for b in bullets) + "</ul></section>")
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(_TPL.format(on=r.on.isoformat(), css=_CSS,
+    out.write_text(_TPL.format(on=r.on.isoformat(), css=_CSS, fonts=FONT_LINK,
                                updated=r.portfolio.updated or "미기재",
                                body="\n".join(parts)), encoding="utf-8")
     return out
@@ -183,6 +259,6 @@ def render_cockpit(r, out: Path = OUT) -> Path:
 def write(*, on: date, sections: list[str], out: Path = OUT) -> Path:
     """범용 렌더. 다른 파이프라인이 쓸 수 있게 남겨둔다."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(_TPL.format(on=on.isoformat(), css=_CSS, updated="—",
+    out.write_text(_TPL.format(on=on.isoformat(), css=_CSS, fonts=FONT_LINK, updated="—",
                                body="\n".join(sections)), encoding="utf-8")
     return out

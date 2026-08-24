@@ -13,7 +13,7 @@ from pathlib import Path
 from ..core.valuation.concentration import effective_positions, hhi
 from ..core.valuation.fx_exposure import sensitivity
 from ..provenance import Unavailable
-from ..render.dashboard import _CSS, _kpi, _table
+from ..render.dashboard import _CSS, FONT_LINK, _kpi, _table
 from . import cockpit as ck
 from . import daily_brief as db
 from . import event_scanner as es
@@ -22,8 +22,8 @@ OUT = Path("dashboard/index.html")
 
 _TPL = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+{fonts}
 <title>투자 리서치 대시보드 — {on}</title><style>{css}
-.up{{color:var(--up)}} .down{{color:var(--warn)}}
 nav{{display:flex;gap:.5rem;flex-wrap:wrap;font-size:.8rem}}
 nav a{{color:var(--fg2);text-decoration:none;border:1px solid var(--line2);
  border-radius:99px;padding:.25rem .7rem;background:var(--card)}}
@@ -37,10 +37,74 @@ h3{{font-size:.82rem;font-weight:650;color:var(--mut);margin:1rem 0 .5rem;
 </style></head><body><div class="w">
 <header><h1>투자 리서치 대시보드</h1>
 <div class="sub">{on} · 매매 판단은 사람이 합니다. 이 화면은 어디를 더 볼지만 제시합니다.</div>
+<div class="search">
+ <input id="q" type="search" placeholder="종목명 또는 티커 검색 — 예: 삼성전자, NVDA"
+   autocomplete="off" spellcheck="false">
+ <div id="sr" class="sr" hidden></div>
+ <div id="sm" class="smsg" hidden></div>
+</div>
 <nav><a href="#market">증시 현황</a><a href="#macro">매크로</a><a href="#holdings">보유 종목</a>
 <a href="#major">주요 종목</a><a href="#events">이벤트</a>{watchnav}<a href="#signals">액션 신호</a><a href="#cockpit">포트폴리오</a></nav>
 </header>
 {body}
+<script>
+(function(){{
+ var q=document.getElementById('q'), sr=document.getElementById('sr'),
+     sm=document.getElementById('sm'), items=[], cur=-1, timer=null;
+ function msg(t,bad){{ sm.textContent=t; sm.className='smsg'+(bad?' bad':''); sm.hidden=!t; }}
+ function esc(s){{ return s.replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
+ function hl(s,term){{ var i=s.toLowerCase().indexOf(term.toLowerCase());
+   return i<0?esc(s):esc(s.slice(0,i))+'<b>'+esc(s.slice(i,i+term.length))+'</b>'+esc(s.slice(i+term.length)); }}
+ function draw(term){{
+   if(!items.length){{ sr.hidden=true; return; }}
+   sr.innerHTML=items.map(function(r,i){{
+     return '<div class="row'+(i===cur?' on':'')+'" data-i="'+i+'">'
+       +'<span class="t">'+esc(r.s)+'</span><span>'+hl(r.n,term)+'</span>'
+       +'<span class="g">'+esc(r.m)+(r.ready?' · 생성됨':'')+'</span></div>';
+   }}).join('');
+   sr.hidden=false;
+   Array.prototype.forEach.call(sr.children,function(el){{
+     el.onclick=function(){{ pick(items[+el.dataset.i]); }};
+   }});
+ }}
+ function pick(r){{
+   sr.hidden=true; q.blur();
+   if(r.ready){{ window.open('stocks/'+r.s+'.html','_blank'); msg(r.n+' ('+r.s+') 페이지를 새 창으로 열었습니다.'); return; }}
+   msg(r.n+' ('+r.s+') 페이지를 생성하는 중입니다… 재무·시세를 받아오느라 20~60초 걸립니다.');
+   fetch('/api/generate?t='+encodeURIComponent(r.s)).then(x=>x.json()).then(function(d){{
+     if(d.ok){{ msg(r.n+' 생성 완료. 새 창으로 엽니다'+(d.narrative?'':' (서사 미작성 — 사실만 표시됩니다)')+'.');
+                window.open(d.url,'_blank'); }}
+     else msg('생성 실패: '+d.error, true);
+   }}).catch(function(){{
+     msg('이 페이지는 파일로 열려 있어 생성 기능을 쓸 수 없습니다. '
+        +'터미널에서 python3 -m src.pipelines.serve 를 실행한 뒤 http://127.0.0.1:8766 으로 접속하거나, '
+        +'python3 -m src.pipelines.stock_page '+r.s+' 를 직접 실행하세요.', true);
+   }});
+ }}
+ q.addEventListener('input',function(){{
+   var t=q.value.trim(); cur=-1; msg('');
+   if(timer) clearTimeout(timer);
+   if(t.length<1){{ items=[]; sr.hidden=true; return; }}
+   timer=setTimeout(function(){{
+     fetch('/api/search?q='+encodeURIComponent(t)).then(x=>x.json()).then(function(d){{
+       items=d; draw(t);
+     }}).catch(function(){{
+       items=[]; sr.hidden=true;
+       msg('검색은 로컬 서버에서만 동작합니다 — 터미널에서 python3 -m src.pipelines.serve 실행 후 '
+          +'http://127.0.0.1:8766 으로 접속하세요.', true);
+     }});
+   }},160);
+ }});
+ q.addEventListener('keydown',function(e){{
+   if(sr.hidden) return;
+   if(e.key==='ArrowDown'){{ cur=Math.min(cur+1,items.length-1); draw(q.value.trim()); e.preventDefault(); }}
+   else if(e.key==='ArrowUp'){{ cur=Math.max(cur-1,0); draw(q.value.trim()); e.preventDefault(); }}
+   else if(e.key==='Enter'){{ if(cur>=0) pick(items[cur]); e.preventDefault(); }}
+   else if(e.key==='Escape'){{ sr.hidden=true; }}
+ }});
+ document.addEventListener('click',function(e){{ if(!e.target.closest('.search')) sr.hidden=true; }});
+}})();
+</script>
 <footer>리서치 보조 산출물이며 투자 자문이 아닙니다. 1차 스크리너로만 사용하고,
 판단에 직접 쓰는 숫자는 원문에서 재확인하십시오.<br>
 생성: <code>python3 -m src.pipelines.dashboard</code></footer>
@@ -89,11 +153,11 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
     kpis = []
     for sym, (s, mv) in b.kr_indices.items():
         r = None if isinstance(mv, Unavailable) else mv.value
-        kpis.append(_kpi(sym, f"{s.value:,.0f}", f"{r:+.2%}" if r is not None else "확인 필요"))
+        kpis.append(_kpi(sym, f"{s.value:,.0f}", _mv(r) if r is not None else "확인 필요"))
     for sym, (label, s, mv) in list(b.us_indices.items())[:2]:
         r = None if isinstance(mv, Unavailable) else mv.value
         kpis.append(_kpi(f"{label} ({sym})", f"{s.value:,.2f}",
-                         f"{r:+.2%}" if r is not None else "확인 필요"))
+                         _mv(r) if r is not None else "확인 필요"))
     if not isinstance(b.fx_toss, Unavailable):
         kpis.append(_kpi("USD/KRW", f"{b.fx_toss.value:,.2f}", "토스 장중"))
     P.append(f'<div class="kpis" id="market">{"".join(kpis)}</div>')
@@ -261,7 +325,7 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                  + '</section>')
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(_TPL.format(on=b.on.isoformat(), css=_CSS, body="\n".join(P),
+    out.write_text(_TPL.format(on=b.on.isoformat(), css=_CSS, fonts=FONT_LINK, body="\n".join(P),
                                watchnav="" if public else '<a href="#watch">관심 종목</a>'),
                    encoding="utf-8")
     return out
