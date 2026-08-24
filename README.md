@@ -46,7 +46,7 @@ python3 -m src.pipelines.dashboard --public # 개인 정보 뺀 공개용 → da
 | `SEC_USER_AGENT` | SEC EDGAR 가 요구하는 연락처 (키 아님) | — | **예** |
 | `FRED_API_KEY` | 미국 금리·매크로 · [발급](https://fred.stlouisfed.org/docs/api/api_key.html) | 무료 | 권장 |
 | `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET` | 시세·지수·랭킹·환율 (한국+미국) | 무료 | 권장 |
-| `OPENDART_API_KEY` | 한국 공시·재무 · [발급](https://opendart.fss.or.kr/) | 무료 | 미구현 |
+| `OPENDART_API_KEY` | 한국 공시·재무 · [발급](https://opendart.fss.or.kr/) | 무료 | 한국 종목 시 필수 |
 | `FMP_API_KEY` | 어닝콜 트랜스크립트 | 유료 | 선택 |
 
 키가 없으면 해당 소스만 `확인 필요`로 표기되고 나머지는 정상 동작합니다.
@@ -131,8 +131,8 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | 토스증권 (시세·지수·랭킹) | 동작 · 무료 키 |
 | 10-K 본문 다운로드 | 동작 · 키 불필요 (SEC Archives) |
 | 스토리 리더 (공시 문구 diff) | 동작 · 어닝콜 없이 공시 축만 |
-| 기업 해독기 (재무 골격 + Item 1) | 동작 · 미국만 |
-| OpenDART (한국 공시) | 미구현 |
+| 기업 해독기 (재무 골격) | 동작 · 미국(SEC) + 한국(DART) |
+| OpenDART (한국 재무·공시목록) | 동작 · 무료 키 · 본문 파싱은 미구현 |
 | 어닝콜 트랜스크립트 | 미구현 (무료 소스 없음) |
 | 실적 캘린더 | 무료 소스 없음 → `watchlist.yaml` 수동 |
 

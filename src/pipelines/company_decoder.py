@@ -20,7 +20,7 @@ from ..core.valuation.fundamentals import (fcf_yield, margin, per_share, streak,
 from ..core.valuation.outliers import detect, normalized_base
 from ..models import AssetType, Market
 from ..provenance import Sourced, Unavailable, record
-from ..sources import prices, sec_edgar, toss
+from ..sources import open_dart, prices, sec_edgar, toss
 
 REPORT_DIR = Path("reports/cards")
 
@@ -92,7 +92,9 @@ def run(ticker: str, on: date | None = None) -> CompanyCard | Unavailable:
         if not isinstance(fcf, Unavailable):
             outliers = detect(_vals(fcf))
         sh = sec_edgar.annual_series(tk, "SharesOutstanding")
-        shares = sh[-1] if not isinstance(sh, Unavailable) else sh
+        # 타입을 Sourced[float] 로 통일한다 — 한국 경로(토스)와 형태를 맞춰야
+        # 아래 시가총액 계산과 렌더가 분기 없이 돈다.
+        shares = (sh[-1].map(lambda f: f.value) if not isinstance(sh, Unavailable) else sh)
 
         fs = sec_edgar.annual_filings(tk, limit=1)
         if isinstance(fs, Unavailable):
@@ -120,21 +122,41 @@ def run(ticker: str, on: date | None = None) -> CompanyCard | Unavailable:
         notes.append("사업부문×지역 매출 분해는 companyfacts 에 차원 축이 없어 "
                      "본문 단서만 제시한다 — 정확한 수치는 10-K 세그먼트 주석에서 확인 필요")
     else:
-        notes.append("한국 상장사 재무는 OpenDART 연동이 필요하다 (미구현) — "
-                     "재무 골격·공시 본문을 확보하지 못했다. 토스는 시세·종목정보만 제공한다")
+        # 한국: OpenDART. 각 항목이 3개년을 담고 있어 1회 호출로 시계열이 나온다.
+        for concept in ("Revenues", "OperatingIncome", "NetIncome"):
+            r = open_dart.annual_series(tk, concept)
+            if isinstance(r, Unavailable):
+                notes.append(f"{concept} 미확보 — {r.reason[:70]}")
+            else:
+                series[concept] = r
+                record(r[-1], subject=f"해독기 {tk} {concept}")
+        fcf = open_dart.free_cash_flow(tk)
+        if isinstance(fcf, Unavailable):
+            notes.append(f"FCF 미확보 — {fcf.reason[:70]}")
+        else:
+            outliers = detect(_vals(fcf))
+        n = info.get("shares_outstanding")
+        if n:
+            shares = Sourced(float(n), info_s.source)
+        fs = open_dart.annual_filings(tk, limit=1)
+        if isinstance(fs, Unavailable):
+            notes.append(f"사업보고서 목록 미확보 — {fs.reason[:70]}")
+        else:
+            cite = f"[1차] DART 사업보고서 FY{fs[0].fiscal_year} — {open_dart.filing_viewer_url(fs[0])}"
+            notes.append("사업보고서 본문 파싱은 미구현이다 — 위 링크에서 직접 확인하라. "
+                         "재무 수치는 정형 API 로 받은 값이다")
+        notes.append(Market.KR.transcript_availability
+                     + " — 스토리 리더의 어닝콜 축을 쓸 수 없다")
 
     # 시가총액
     px = prices.last_close(tk)
     if isinstance(px, Unavailable):
         market_cap: Sourced | Unavailable = px
     else:
-        n = (shares.value.value if not isinstance(shares, Unavailable)
-             else info.get("shares_outstanding"))
-        if not n:
+        if isinstance(shares, Unavailable):
             market_cap = Unavailable(f"{tk} 시가총액", "주식수 미확보")
         else:
-            market_cap = prices.market_cap(tk, Sourced(float(n), (
-                shares.source if not isinstance(shares, Unavailable) else info_s.source)))
+            market_cap = prices.market_cap(tk, shares)
 
     return CompanyCard(tk, on, market, asset_type, info, series, fcf, outliers,
                        shares, px, market_cap, business, hints, cite, notes)
@@ -151,8 +173,7 @@ def to_markdown(c: CompanyCard) -> str:
     L += ["", "## 규모", ""]
     L.append(fact_line("현재가", c.price, "{:,.2f}"))
     L.append(fact_line("시가총액", c.market_cap, "{:,.0f}"))
-    L.append(fact_line("주식수", c.shares.map(lambda f: f.value) if isinstance(c.shares, Sourced)
-                       else c.shares, "{:,.0f}"))
+    L.append(fact_line("주식수", c.shares, "{:,.0f}"))
 
     if c.series.get("Revenues"):
         rev = _vals(c.series["Revenues"])
@@ -160,16 +181,29 @@ def to_markdown(c: CompanyCard) -> str:
         fc = [] if isinstance(c.fcf, Unavailable) else _vals(c.fcf)
         g = dict(yoy(rev)); nm = dict(margin(ni, rev)) if ni else {}
         fm = dict(margin(fc, rev)) if fc else {}
-        L += ["", "## 재무 골격", "", "| 회계연도 | 매출 | YoY | 순이익 | 순이익률 | FCF | FCF 마진 |",
-              "|---|---:|---:|---:|---:|---:|---:|"]
+        oi = _vals(c.series.get("OperatingIncome", []))
+        om = dict(margin(oi, rev)) if oi else {}
+        oid = dict(oi)
+        unit, div = ("조", 1e12) if c.market is Market.KR else ("B", 1e9)
+        head = "| 회계연도 | 매출 | YoY |"
+        sep = "|---|---:|---:|"
+        if oi:
+            head += " 영업이익 | 영업이익률 |"; sep += "---:|---:|"
+        head += " 순이익 | 순이익률 | FCF | FCF 마진 |"
+        sep += "---:|---:|---:|---:|"
+        L += ["", "## 재무 골격", "", head, sep]
         nid, fcd = dict(ni), dict(fc)
         for k, v in rev[-6:]:
-            L.append(f"| {k} | {v/1e9:,.1f}B | "
-                     f"{('%+.1f%%' % (g[k]*100)) if g.get(k) is not None else '—'} | "
-                     f"{(f'{nid[k]/1e9:,.1f}B' if k in nid else '—')} | "
-                     f"{('%.1f%%' % (nm[k]*100)) if nm.get(k) is not None else '—'} | "
-                     f"{(f'{fcd[k]/1e9:,.1f}B' if k in fcd else '—')} | "
-                     f"{('%.1f%%' % (fm[k]*100)) if fm.get(k) is not None else '—'} |")
+            row = (f"| {k} | {v/div:,.1f}{unit} | "
+                   f"{('%+.1f%%' % (g[k]*100)) if g.get(k) is not None else '—'} |")
+            if oi:
+                row += (f" {(f'{oid[k]/div:,.1f}{unit}' if k in oid else '—')} |"
+                        f" {('%.1f%%' % (om[k]*100)) if om.get(k) is not None else '—'} |")
+            row += (f" {(f'{nid[k]/div:,.1f}{unit}' if k in nid else '—')} |"
+                    f" {('%.1f%%' % (nm[k]*100)) if nm.get(k) is not None else '—'} |"
+                    f" {(f'{fcd[k]/div:,.1f}{unit}' if k in fcd else '—')} |"
+                    f" {('%.1f%%' % (fm[k]*100)) if fm.get(k) is not None else '—'} |")
+            L.append(row)
         L += ["", f"- [사실] 매출 {streak(rev)}"]
         if fc:
             L.append(f"- [사실] FCF {streak(fc)}")
@@ -177,9 +211,10 @@ def to_markdown(c: CompanyCard) -> str:
             if base and not isinstance(c.market_cap, Unavailable):
                 y = fcf_yield(base, c.market_cap.value)
                 if y is not None:
-                    L.append(f"- [사실] FCF 수익률 {y:.2%} (기준 FCF 3년 평균 {base/1e9:,.1f}B)")
+                    L.append(f"- [사실] FCF 수익률 {y:.2%} "
+                             f"(기준 FCF 3년 평균 {base/div:,.1f}{unit})")
         if c.series.get("Revenues") and isinstance(c.shares, Sourced):
-            ps = per_share(rev[-1][1], c.shares.value.value)
+            ps = per_share(rev[-1][1], c.shares.value)
             if ps: L.append(f"- [사실] 주당 매출 {ps:,.2f}")
 
     if c.outliers:

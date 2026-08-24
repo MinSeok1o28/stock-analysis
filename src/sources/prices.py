@@ -47,8 +47,7 @@ def market_cap(ticker: str, shares_outstanding: Sourced[float] | Unavailable
     px = last_close(ticker)
     if isinstance(px, Unavailable):
         return px
-    shares = shares_outstanding.value
-    shares = shares.value if hasattr(shares, "value") else float(shares)
+    shares = float(shares_outstanding.value)
     from ..provenance import Locator, Source, SourceKind, Tier
     src = Source(
         f"시가총액 파생 (주가: {px.source.name} / 주식수: {shares_outstanding.source.name})",
