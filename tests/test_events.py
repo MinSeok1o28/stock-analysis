@@ -128,8 +128,15 @@ class TestDetect(unittest.TestCase):
         b = bars(list(range(130, 80, -1)))
         self.assertTrue(any(e.tag == "52주저점권" for e in detect(b)))
 
-    def test_quiet_stock_has_no_events(self) -> None:
-        self.assertEqual(detect(bars([100] * 30)), [])
+    def test_midrange_stock_has_no_events(self) -> None:
+        """레인지 중간에서 조용히 움직이는 종목은 태그가 없어야 한다.
+
+        완전 횡보 픽스처는 쓰지 않는다 — high=close 라 52주 고점권에 정상적으로 걸린다.
+        """
+        closes = [100 + (i % 7) - 3 for i in range(30)]      # 97~103 진동
+        closes[10] = 130                                      # 과거 고점
+        closes[20] = 70                                       # 과거 저점
+        self.assertEqual(detect(bars(closes)), [])
 
     def test_valuation_gap(self) -> None:
         ev = detect(bars([100] * 30), valuation_gap=0.09)
