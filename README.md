@@ -21,19 +21,39 @@
 
 ## 빠른 시작
 
+**필요한 것**: Python **3.11 이상**. (서사 자동 작성만 [Claude Code](https://claude.com/claude-code)
+CLI 를 추가로 씁니다 — 없어도 사실 계산은 전부 돌아갑니다.)
+
 ```bash
 git clone https://github.com/<you>/stock-analysis.git && cd stock-analysis
-pip install requests PyYAML Jinja2          # 의존성 3개가 전부
+pip install requests PyYAML                 # 의존성 2개가 전부
 cp .env.example .env                        # SEC_USER_AGENT 만 채워도 동작
-cp portfolio/holdings.example.yaml portfolio/holdings.yaml
+cp portfolio/holdings.example.yaml portfolio/holdings.yaml   # 데모 데이터 — 본인 것으로 바꾸세요
 cp portfolio/watchlist.example.yaml portfolio/watchlist.yaml
 
 python3 -m src.config                       # 무엇이 되고 안 되는지 진단
-python3 -m unittest discover -s tests -t . -q   # 262개 테스트
+python3 -m unittest discover -s tests -t . -q   # 262개 테스트 (키 없이 통과)
 python3 -m src.pipelines.dashboard          # → dashboard/index.html
 ```
 
-브라우저로 `dashboard/index.html` 을 열면 끝입니다. 서버가 필요 없습니다.
+예시 보유는 데모입니다. 그대로 두면 화면이 "보유 현황이 N일 전 기준"이라고 알려줍니다 —
+본인 보유로 바꾸면 사라집니다.
+
+### 보는 방법 두 가지
+
+```bash
+python3 -m src.pipelines.serve      # → http://127.0.0.1:8766   ← 권장
+```
+
+| | 파일로 직접 열기 | 로컬 서버 |
+|---|---|---|
+| 표·지표·차트 | ✅ | ✅ |
+| 종목 검색 · 분석 생성 | ❌ | ✅ |
+| 다중 선택 배치 분석 · 비교 | ❌ | ✅ |
+| 보유 편집 | ❌ | ✅ |
+
+`file://` 에서는 브라우저가 `/api/*` 요청을 막습니다. 화면이 이를 판별해 이유를 적고
+입력창을 끕니다 — 고장난 게 아닙니다.
 
 ```bash
 python3 -m src.pipelines.event_scanner      # 지금 볼 종목 자동 선정 → reports/events/
@@ -59,6 +79,11 @@ python3 -m src.pipelines.dashboard --public # 개인 정보 뺀 공개용 → da
 | `FMP_API_KEY` | 어닝콜 트랜스크립트 | 유료 | 선택 |
 
 키가 없으면 해당 소스만 `확인 필요`로 표기되고 나머지는 정상 동작합니다.
+**실측**: 새로 클론해 `SEC_USER_AGENT` 하나만 채운 상태에서 대시보드가 정상 생성되고,
+미국 기업 해독 카드도 나옵니다. 못 채운 부분은 화면이 스스로 이름을 대며 밝힙니다
+(`국내 지수 미확보 — TOSS_CLIENT_ID 미설정`).
+
+`claude` CLI 가 없으면 서사(해석)만 빠지고 사실 계산은 전부 돌아갑니다.
 
 **토스증권**: WTS > 설정 > Open API 에서 발급하고, 같은 화면 하단 **허용 IP 관리**에
 공인 IP를 등록해야 합니다 (`curl -s ifconfig.me`).

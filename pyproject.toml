@@ -3,10 +3,10 @@ name = "stock-analysis"
 version = "0.1.0"
 description = "개인 투자 리서치 시스템 — 리서치·정리·계산만. 매매 판단은 하지 않는다."
 requires-python = ">=3.11"
+# HTML 은 f-string 으로 직접 조립한다 (render/·pipelines/). 템플릿 엔진을 쓰지 않는다.
 dependencies = [
     "requests>=2.31",
     "PyYAML>=6.0",
-    "Jinja2>=3.1",
 ]
 
 [project.optional-dependencies]
