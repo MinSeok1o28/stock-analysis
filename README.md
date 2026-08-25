@@ -29,7 +29,7 @@ cp portfolio/holdings.example.yaml portfolio/holdings.yaml
 cp portfolio/watchlist.example.yaml portfolio/watchlist.yaml
 
 python3 -m src.config                       # 무엇이 되고 안 되는지 진단
-python3 -m unittest discover -s tests -t . -q   # 234개 테스트
+python3 -m unittest discover -s tests -t . -q   # 247개 테스트
 python3 -m src.pipelines.dashboard          # → dashboard/index.html
 ```
 
@@ -152,6 +152,7 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | **다중 선택 배치 분석** | 동작 · 체크박스로 골라 동시 생성 → 비교 표 + 접이식 상세 |
 | **주요 기업 목록** | 동작 · 한국 시가총액 상위(파생) / 미국 S&P 500 편입 비중(1차) |
 | **초보자용 수치 해설** | 동작 · 용어 10종 + 종목별 평문 읽기 |
+| **좌측 목차 · 섹션 전환** | 동작 · 스크롤 대신 목차에서 골라 한 섹션만 · 해시로 북마크 |
 | **종목 상세 페이지 (사실 + 서사)** | 동작 · `dashboard/stocks/<티커>.html` |
 | **종목 검색 + 온디맨드 생성** | 동작 · 7,673종목 자동완성 · 로컬 서버 필요 |
 | **서사 자동 작성** | 동작 · `claude` CLI 호출 · 별도 API 키 불필요 |

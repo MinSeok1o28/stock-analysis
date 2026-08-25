@@ -142,6 +142,54 @@ a.stk:hover .go{{text-decoration:underline}}
 .bstat.running{{border-color:var(--acc);color:var(--acc);background:var(--accs)}}
 .bstat.ok{{border-color:var(--up);color:var(--up);background:var(--ups)}}
 .bstat.error{{border-color:var(--warn);color:var(--warn);background:var(--warns)}}
+
+/* ══ 좌측 목차 + 섹션 전환 ═══════════════════════════════
+   한 장에 다 쌓아 두면 스크롤이 길어져 뒤쪽 섹션을 아무도 안 본다.
+   목차에서 고른 하나만 띄운다. 선택 상태는 해시에 남겨 새로고침·북마크에 견딘다.
+   사이드바는 테마와 무관하게 어둡게 둔다 — 본문과 역할이 다르다는 걸 색으로 가른다. */
+:root{{--side:#161d24;--side-fg:#c9d4dc;--side-mut:#7d8b96;--side-on:#22303b}}
+@media(prefers-color-scheme:dark){{:root:not([data-theme=light]){{--side:#0b1116;--side-on:#1b2530}}}}
+:root[data-theme=dark]{{--side:#0b1116;--side-on:#1b2530}}
+
+body{{padding:0}}
+.app{{display:flex;align-items:stretch;min-height:100vh}}
+.side{{width:246px;flex:none;background:var(--side);color:var(--side-fg);
+ position:sticky;top:0;height:100vh;overflow-y:auto;
+ display:flex;flex-direction:column;gap:1.1rem;padding:1.5rem 0 1.2rem}}
+.brand{{display:flex;gap:.7rem;align-items:center;padding:0 1.25rem}}
+.brand .bm{{width:38px;height:38px;border-radius:10px;background:var(--acc);color:#fff;
+ display:flex;align-items:center;justify-content:center;font-size:1.15rem;flex:none}}
+.brand .bt{{font-size:1rem;font-weight:700;color:#fff;line-height:1.3;letter-spacing:-.02em}}
+.brand .bs{{font-size:.72rem;color:var(--side-mut);margin-top:.1rem}}
+.vnav{{display:flex;flex-direction:column;gap:.15rem;padding:0 .7rem}}
+.vnav button{{display:flex;align-items:center;gap:.65rem;width:100%;text-align:left;
+ border:0;background:transparent;color:var(--side-fg);font:inherit;font-size:.875rem;
+ font-weight:500;padding:.62rem .75rem;border-radius:9px;cursor:pointer;
+ letter-spacing:-.01em}}
+.vnav button:hover{{background:var(--side-on)}}
+.vnav button.on{{background:var(--side-on);color:#fff;font-weight:700}}
+.vnav .ic{{font-size:1rem;flex:none;width:1.3rem;text-align:center}}
+.vnav .cnt{{margin-left:auto;font-size:.68rem;color:var(--side-mut);
+ background:rgba(255,255,255,.07);border-radius:99px;padding:.1rem .45rem}}
+.vnav button.on .cnt{{color:var(--side-fg)}}
+.sfoot{{margin-top:auto;padding:0 1.25rem;font-size:.7rem;line-height:1.7;
+ color:var(--side-mut)}}
+.main{{flex:1;min-width:0;display:flex;flex-direction:column;
+ padding:1.5rem 1.6rem 4rem;max-width:1500px}}
+.topbar{{position:sticky;top:0;z-index:70;background:var(--bg);
+ padding:.2rem 0 .9rem;margin-bottom:.4rem;border-bottom:1px solid var(--line2)}}
+.vhead{{display:flex;align-items:baseline;gap:.7rem;flex-wrap:wrap;margin:1.2rem 0 .1rem}}
+.vhead h1{{font-size:1.32rem}}
+.vhead .vsub{{font-size:.8rem;color:var(--mut)}}
+.view[hidden]{{display:none}}
+@media(max-width:900px){{
+ .app{{flex-direction:column}}
+ .side{{width:auto;height:auto;position:static;padding:1rem 0;gap:.8rem}}
+ .vnav{{flex-direction:row;overflow-x:auto;padding:0 .7rem .2rem}}
+ .vnav button{{white-space:nowrap;width:auto}}
+ .vnav .cnt,.sfoot{{display:none}}
+ .main{{padding:1rem 1rem 3rem}}
+}}
 .mlist{{max-height:430px;overflow-y:auto;border:1px solid var(--line2);border-radius:9px;
  background:var(--card)}}
 .mrow{{display:flex;align-items:center;gap:.6rem;padding:.45rem .7rem;font-size:.84rem;
@@ -156,9 +204,16 @@ a.stk:hover .go{{text-decoration:underline}}
  flex:none}}
 .mrow .mv{{font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--fg2);
  flex:none;text-align:right;min-width:4.6rem}}
-</style></head><body><div class="w">
-<header><h1>투자 리서치 대시보드</h1>
-<div class="sub">{on} · 매매 판단은 사람이 합니다. 이 화면은 어디를 더 볼지만 제시합니다.</div>
+</style></head><body>
+<div class="app">
+<aside class="side">
+ <div class="brand"><div class="bm">📊</div>
+  <div><div class="bt">투자 리서치</div><div class="bs">{on}</div></div></div>
+ <nav class="vnav">{vnav}</nav>
+ <div class="sfoot">매매 판단은 사람이 합니다.<br>이 화면은 어디를 더 볼지만 제시합니다.</div>
+</aside>
+<main class="main">
+<div class="topbar">
 <div class="search">
  <div class="fld">
   <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
@@ -178,10 +233,8 @@ a.stk:hover .go{{text-decoration:underline}}
  </div>
  <div id="prog" class="prog" hidden></div>
 </div>
-<nav><a href="#market">증시 현황</a><a href="#macro">매크로</a><a href="#holdings">보유 종목</a>
-<a href="#majors">주요 기업</a><a href="#major">주요 종목</a><a href="#events">이벤트</a>{watchnav}<a href="#signals">액션 신호</a><a href="#cockpit">포트폴리오</a></nav>
-</header>
-{body}
+</div>
+<div class="w">{body}</div>
 <script>
 (function(){{
  var q=document.getElementById('q'), qc=document.getElementById('qc'),
@@ -245,6 +298,24 @@ a.stk:hover .go{{text-decoration:underline}}
    pg.className='prog '+(bad?'bad':'ok');
    pg.innerHTML='<div class="msg">'+html+'</div>';
  }}
+
+ /* ── 섹션 전환 ──
+    목차에서 고른 하나만 띄운다. 선택은 해시에 남겨 새로고침·북마크·뒤로가기에 견딘다.
+    숨기는 것이지 지우는 게 아니라, 다른 섹션에서 체크한 종목도 바구니에 그대로 남는다. */
+ var VIEWS=[].slice.call(document.querySelectorAll('.view')),
+     VNAV=[].slice.call(document.querySelectorAll('.vnav button'));
+ function showView(id){{
+   var hit=false;
+   VIEWS.forEach(function(v){{ var on=(v.dataset.v===id); v.hidden=!on; hit=hit||on; }});
+   if(!hit) return false;
+   VNAV.forEach(function(n){{ n.classList.toggle('on', n.dataset.v===id); }});
+   try{{ if(location.hash.slice(1)!==id) history.replaceState(null,'','#'+id); }}catch(e){{}}
+   window.scrollTo({{top:0}});
+   return true;
+ }}
+ VNAV.forEach(function(n){{ n.onclick=function(){{ showView(n.dataset.v); }}; }});
+ window.addEventListener('hashchange',function(){{ showView(location.hash.slice(1)); }});
+ if(VNAV.length && !showView(location.hash.slice(1))) showView(VNAV[0].dataset.v);
 
  /* ── 선택 바구니 · 배치 분석 ──
     순차로 돌리면 이득이 없다. 5종목 × 60초 = 300초는 나눠 기다리든 한 번에 기다리든 같다.
@@ -454,7 +525,7 @@ a.stk:hover .go{{text-decoration:underline}}
 <footer>리서치 보조 산출물이며 투자 자문이 아닙니다. 1차 스크리너로만 사용하고,
 판단에 직접 쓰는 숫자는 원문에서 재확인하십시오.<br>
 생성: <code>python3 -m src.pipelines.dashboard</code></footer>
-</div></body></html>"""
+</main></div></body></html>"""
 
 
 def _mv(x) -> str:
@@ -524,7 +595,13 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
     유지: 증시 현황·매크로·주요 종목 랭킹(공개 시장 데이터)·집중도 지표(비율만).
     공개 호스팅에 올릴 때 쓴다. 시스템 구조는 보여주되 내 포지션은 보여주지 않는다.
     """
-    P: list[str] = []
+    # 뷰별 누산. 한 장에 다 쌓으면 스크롤이 길어져 뒤쪽 섹션을 아무도 안 본다.
+    V: dict[str, list[str]] = {}
+
+    def add(view: str, html: str) -> None:
+        V.setdefault(view, []).append(html)
+
+    ranked_n = major_n = 0          # 목차 배지에 쓸 실제 종목 수
 
     # KPI
     kpis = []
@@ -537,13 +614,13 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                          _mv(r) if r is not None else "확인 필요"))
     if not isinstance(b.fx_toss, Unavailable):
         kpis.append(_kpi("USD/KRW", f"{b.fx_toss.value:,.2f}", "토스 장중"))
-    P.append(f'<div class="kpis" id="market">{"".join(kpis)}</div>')
+    add("today", f'<div class="kpis" id="market">{"".join(kpis)}</div>')
     if public:
-        P.append('<div class="note">공개 모드입니다. 보유 종목·수량·평가액은 표시하지 않습니다. '
+        add("today", '<div class="note">공개 모드입니다. 보유 종목·수량·평가액은 표시하지 않습니다. '
                  '증시 현황·주요 종목·관심 종목·액션 신호와 집중도 지표만 보여줍니다.</div>')
 
     if b.notes:
-        P.append('<section><h2>확인 필요</h2><ul>'
+        add("today", '<section><h2>확인 필요</h2><ul>'
                  + "".join(f"<li>{escape(n)}</li>" for n in b.notes) + "</ul></section>")
 
     # 증시 현황
@@ -553,7 +630,7 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
     us_rows = [[f"{escape(lab)} <span class=chip>{escape(s)}</span>", f"{v.value:,.2f}",
                 _mv(None if isinstance(m, Unavailable) else m.value)]
                for s, (lab, v, m) in b.us_indices.items()]
-    P.append('<section><h2>증시 현황</h2><div class="grid2">'
+    add("today", '<section><h2>증시 현황</h2><div class="grid2">'
              + f'<div><h3>한국</h3>{_table(["지수", "현재", "변동"], kr_rows)}</div>'
              + f'<div><h3>미국 <span class="chip warn">대표 ETF 대용치</span></h3>'
                f'{_table(["지수", "현재", "변동"], us_rows)}</div></div></section>')
@@ -569,7 +646,7 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
         mrows.append([escape(lab),
                       f'<span class="src">{escape(v.cite())}</span>' if isinstance(v, Unavailable)
                       else f'{v.value:,.2f}<br><span class="src">{escape(v.cite())}</span>'])
-    P.append(f'<section id="macro"><h2>매크로·환율</h2>{_table(["지표", "값 · 출처"], mrows)}</section>')
+    add("today", f'<section id="macro"><h2>매크로·환율</h2>{_table(["지표", "값 · 출처"], mrows)}</section>')
 
     # 보유 종목
     if b.holdings_rows and not public:
@@ -580,7 +657,7 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                        f'{h["price"].value:,.2f}' if h["price"] else "확인 필요",
                        _mv(h["rate"]),
                        f'{h["value"]:,.0f}' if h["value"] else "—"])
-        P.append('<section id="holdings"><h2>보유 종목 밤사이 움직임</h2>'
+        add("holdings", '<section id="holdings"><h2>보유 종목 밤사이 움직임</h2>'
                  + _table(["종목", "현재가", "변동", "평가액"], hr) + '</section>')
 
     # 주요 기업 — 체크박스로 골라 한 번에 분석하는 출발점.
@@ -603,11 +680,12 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
             f'<span class="tk2">{escape(m.ticker)}</span>'
             f'<span class="mv">{escape(m.metric_text)}</span></label>'
             for m in got.value)
+        major_n += len(got.value)
         blocks.append(f'<div class="mkt"><div class="lab">{lab} '
                       f'<span class="chip">{how} {len(got.value)}</span></div>'
                       f'<div class="mlist">{rows}</div>'
                       f'<p class="src" style="margin-top:.5rem">{escape(got.cite())}</p></div>')
-    P.append('<section id="majors"><h2>주요 기업 '
+    add("majors", '<section id="majors"><h2>주요 기업 '
              '<span class="chip">체크해서 한 번에 분석</span></h2>'
              '<p class="src" style="margin:0 0 .9rem">여러 종목을 체크하고 위 '
              '<b>분석</b> 버튼을 누르면 동시에 만들어 비교 페이지로 엽니다. '
@@ -624,7 +702,7 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
             for k, t in (("amount", "거래대금 상위"), ("gainers", "급등"), ("losers", "급락")))
         mk.append(f'<div class="mkt"><div class="lab">{lab}</div>'
                   f'<div class="grid3">{cells}</div></div>')
-    P.append('<section id="major"><h2>주요 종목 <span class="chip">보유 외</span></h2>'
+    add("ranks", '<section id="major"><h2>주요 종목 <span class="chip">보유 외</span></h2>'
              + "".join(mk) + '</section>')
 
     # 관심 종목 · 실적 캘린더 (공개 모드에서는 통째로 제외)
@@ -644,7 +722,7 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                 when = (f'{w.earnings_date} <span class="{cls}">{lbl}</span> '
                         f'<span class="chip">{w.certainty}</span>')
             wr.append([_name_cell(w.ticker, b.names), when, escape(w.note or "—")])
-        P.append('<section id="watch"><h2>관심 종목 · 실적 캘린더</h2>'
+        add("watch", '<section id="watch"><h2>관심 종목 · 실적 캘린더</h2>'
                  '<p class="src" style="margin:0 0 .8rem">무료 실적 캘린더 소스가 없어 '
                  'portfolio/watchlist.yaml 에 수동 입력한다. 확정/추정을 구분해 표기한다.</p>'
                  + _table(["종목", "실적일", "관찰 포인트"], wr, numeric_from=3)
@@ -653,6 +731,7 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
     # 이벤트 스캐너 — 왜 이 종목을 봐야 하는가 + 시나리오
     if scan and scan.candidates:
         ranked = [x for x in scan.candidates if x.events and not (public and x.held)]
+        ranked_n = len(ranked)
         if ranked:
             import os
             from ..models import Market
@@ -698,7 +777,7 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                         if rows else '<p class="src">해당 시장에 걸린 종목 없음.</p>')
                 blocks.append(f'<div class="mkt"><div class="lab">{lab} '
                               f'<span class="chip">{len(rows)}종목</span></div>{body}</div>')
-            P.append('<section id="events"><h2>지금 볼 이유가 있는 종목</h2>'
+            add("events", '<section id="events"><h2>지금 볼 이유가 있는 종목</h2>'
                      '<p class="src" style="margin:0 0 .8rem">보유·관심 종목과 시장 랭킹을 '
                      '후보로 두고 관측 가능한 이벤트를 태그로 붙였습니다. 예측이 아닙니다.</p>'
                      + "".join(blocks) + "</section>")
@@ -714,7 +793,7 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
     if public and hidden_n:
         sigs += (f'<div class="sig"><span class="k">비공개</span>'
                  f'<span>관심 종목에서 파생된 신호 {hidden_n}건은 공개본에 표시하지 않습니다.</span></div>')
-    P.append('<section id="signals"><h2>오늘의 액션 신호</h2>'
+    add("signals", '<section id="signals"><h2>오늘의 액션 신호</h2>'
              '<p class="src" style="margin:0 0 .8rem">매수·매도 신호는 구조적으로 생성되지 않습니다. '
              '어느 딥다이브를 돌릴지만 제시합니다.</p>'
              f'<div style="display:flex;flex-direction:column;gap:.5rem">{sigs or "추가로 파볼 항목 없음."}</div>'
@@ -731,7 +810,7 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
         fx_rows = ([[f"{s.move:+.0%}", f"{s.krw_return:+.2%}"]
                     for s in sensitivity(0.0, c.foreign)]
                    if not isinstance(c.fx, Unavailable) else [])
-        P.append('<section id="cockpit"><h2>포트폴리오 콕핏</h2>'
+        add("holdings", '<section id="cockpit"><h2>포트폴리오 콕핏</h2>'
                  + f'<div class="kpis" style="margin-bottom:1rem">'
                    + ("" if public else _kpi("평가액", f"{c.total:,.0f}"))
                    + f'{_kpi("유효 종목 수", f"{e1:.1f}", f"표면 {e0:.1f} → 룩스루 후")}'
@@ -746,13 +825,55 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                     if fx_rows else "")
                  + '</section>')
 
-    out.parent.mkdir(parents=True, exist_ok=True)
     from .serve import BATCH_WORKERS
-    out.write_text(_TPL.format(on=b.on.isoformat(), css=_CSS, fonts=FONT_LINK, body="\n".join(P),
-                               workers=BATCH_WORKERS,
-                               watchnav="" if public else '<a href="#watch">관심 종목</a>'),
+    # 목차 배지는 '섹션 몇 개'가 아니라 사람이 궁금해하는 수를 보여준다.
+    counts = {"events": ranked_n, "signals": len(shown),
+              "holdings": 0 if public else len(b.holdings_rows),
+              "watch": 0 if public else len(b.watch), "majors": major_n,
+              "today": len(b.notes)}
+    nav, body = _views_html(V, counts, public=public)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_TPL.format(on=b.on.isoformat(), css=_CSS, fonts=FONT_LINK,
+                               body=body, vnav=nav, workers=BATCH_WORKERS),
                    encoding="utf-8")
     return out
+
+
+#: 목차. (뷰 id, 아이콘, 이름, 한 줄 설명). 내용이 없는 뷰는 목차에서 빠진다.
+VIEWS: tuple[tuple[str, str, str, str], ...] = (
+    ("today",    "📊", "오늘",        "증시·매크로·환율과 오늘 확인이 필요한 것"),
+    ("majors",   "🏢", "주요 기업",   "체크해서 한 번에 분석. 한국 시가총액 · 미국 S&P 500 편입 비중"),
+    ("events",   "🔍", "이벤트",      "지금 이 종목을 왜 봐야 하는가 — 관측된 사실만"),
+    ("signals",  "🎯", "액션 신호",   "어느 딥다이브를 돌릴지. 매수·매도는 생성되지 않는다"),
+    ("ranks",    "📈", "시장 랭킹",   "거래대금·급등·급락. 등락률을 그대로 읽으면 안 되는 종목은 ⚠"),
+    ("holdings", "💼", "보유·포트폴리오", "밤사이 움직임과 집중도·환노출"),
+    ("watch",    "📅", "관심 종목",   "실적 캘린더. 확정과 추정을 구분해 표기한다"),
+)
+
+
+#: 공개 모드에서 이름이 달라지는 뷰. 보유 목록이 빠지고 비율 지표만 남는다.
+PUBLIC_LABELS = {"holdings": ("포트폴리오", "집중도·환노출. 공개본은 비율만 보여준다")}
+
+
+def _views_html(V: dict[str, list[str]], counts: dict[str, int], *,
+                public: bool = False) -> tuple[str, str]:
+    """(목차 HTML, 본문 HTML). 내용이 없는 뷰는 목차에서 빠지고, 첫 뷰가 기본으로 열린다."""
+    live = [v for v in VIEWS if V.get(v[0])]
+    if not live:                                   # 방어 — 전부 비면 빈 화면을 주지 않는다
+        return "", '<section><p>표시할 내용이 없습니다.</p></section>'
+    nav, body = [], []
+    for i, (vid, icon, label, sub) in enumerate(live):
+        if public and vid in PUBLIC_LABELS:
+            label, sub = PUBLIC_LABELS[vid]
+        n = counts.get(vid) or 0
+        badge = f'<span class="cnt">{n}</span>' if n else ""
+        nav.append(f'<button type="button" data-v="{vid}">'
+                   f'<span class="ic">{icon}</span>{escape(label)}{badge}</button>')
+        body.append(f'<div class="view" data-v="{vid}"{"" if i == 0 else " hidden"}>'
+                    f'<div class="vhead"><h1>{escape(label)}</h1>'
+                    f'<span class="vsub">{escape(sub)}</span></div>'
+                    + "".join(V[vid]) + '</div>')
+    return "".join(nav), "".join(body)
 
 
 if __name__ == "__main__":
