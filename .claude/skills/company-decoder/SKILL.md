@@ -65,13 +65,37 @@ DART 링크를 제시하며 **직접 확인이 필요하다고 적는다.**
 ## 5. 서사를 파일로 남긴다 ★
 
 해석을 채팅에만 두면 사라진다. `portfolio/narratives/<티커>.yaml` 에 쓴다.
-`src/narrative_io.py` 의 `template()` 이 서식을 준다.
+
+**기본은 자동 생성이다.** `narrator` 가 사실 묶음을 조립해 `claude` CLI 에 넘기고
+돌아온 YAML 을 검증해 저장한다. 별도 API 키를 쓰지 않는다.
+
+```bash
+python3 -m src.pipelines.narrator NVDA       # 서사 생성 (60~100초)
+python3 -m src.pipelines.stock_page NVDA     # → dashboard/stocks/NVDA.html
+```
+
+여러 종목이면 서버를 띄우고 화면에서 체크해 한 번에 돌린다 — 동시 실행이라 훨씬 빠르다
+(`python3 -m src.pipelines.serve` → 체크박스 → `분석`).
+
+손으로 쓸 수도 있다. `src/narrative_io.py` 의 `template()` 이 서식을 준다:
 
 ```bash
 python3 -c "from src.narrative_io import template; print(template('NVDA'))" \
   > portfolio/narratives/NVDA.yaml
-# 편집 후
-python3 -m src.pipelines.stock_page NVDA     # → dashboard/stocks/NVDA.html
+```
+
+**손으로 쓰면 `based_on` 이 안 남는다.** 이건 그 서사가 어느 보고서를 근거로 쓰였는지
+기록하는 블록이고, 새 10-K·사업보고서가 나왔을 때 서사가 낡았는지 판단하는 유일한 기준이다
+(`pipelines/filings.check_basis`). 날짜만으로는 안 된다 — 90일이 지나도 새 보고서가 없으면
+안 낡은 것이고, 30일밖에 안 지났어도 새 10-K 가 나왔으면 낡은 것이다.
+손으로 썼다면 나중에 `narrator` 로 한 번 재생성해 기록을 채우는 편이 낫다.
+
+```yaml
+based_on:                                     # narrator 가 자동으로 채운다
+  form: 10-K
+  filed_on: '2026-02-25'
+  accession: 0001045810-26-000021             # 제출되면 다시 바뀌지 않는 값
+  url: https://www.sec.gov/Archives/...
 ```
 
 ### 채울 항목과 규칙

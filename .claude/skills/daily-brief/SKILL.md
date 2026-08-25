@@ -28,8 +28,33 @@ python3 -m src.pipelines.dashboard        # 브리핑 + 콕핏 + HTML 대시보�
 | 매크로 | FRED (미10년물·2년물·연방기금) | 관측일이 며칠 전일 수 있음 |
 | 환율 | 토스(장중) + Frankfurter(ECB 영업일 종가) | 둘의 성격이 다름 |
 | 보유 종목 | `holdings.yaml` + 토스 시세·일봉 | 변동률은 종목당 캔들 1콜 |
-| 주요 종목 | 토스 `rankings` — 거래대금·급등·급락 (한/미) | 보유 외 시장 전체 |
+| 주요 종목 | 토스 `rankings` — 한/미 각각 거래대금·급등·급락 **6종** | 보유 외 시장 전체 |
+| 급등락 이상치 | 일봉 대조(`core/anomalies`) + DART 공시(`open_dart.corporate_actions`) | 아래 2-1 |
 | 관심 종목 | `watchlist.yaml` (수동) | 실적일이 있어야 신호가 난다 |
+
+## 2-1. 급등락 등락률을 그대로 싣지 않는다
+
+랭킹에는 **직전 종가가 비교 대상이 못 되는 종목**이 섞여 들어온다.
+거래정지 후 재개, 신규상장, 액면분할·병합이 그렇다.
+
+정황과 확정을 분리한다:
+
+1. **정황** — `core/anomalies.inspect()` 가 일봉만 보고 판단한다. ±20% 미만은 검사하지 않고,
+   극단 변동 상위 6종목만 본다 (API 호출 절약).
+   - `거래정지 후 재개` — 무거래·종가고정 3세션 이상
+   - `이력 부족` — 일봉 2개 미만 (신규상장)
+   - `액면분할·병합 정황` — 2·2.5·3·4·5·10·20·50·100:1 배수에 3% 이내 근접
+   - `랭킹 기준가와 일봉 불일치`
+2. **확정** — 한국 종목만 `open_dart.corporate_actions()` 로 공시를 찾아 원인을 못박는다.
+   미국은 SEC 에 DART `list.json` 대응물이 없어 **정황까지만** 가고 그 한계를 산출물에 적는다.
+
+**정황만 보고 원인을 단정하면 틀린다.** 실제 사례 (2026-08-25):
+- `096610 알에프세미 -95.34%` — 액면분할로 짐작했으나 공시 확인 결과 **상장폐지 정리매매**
+- `900270 헝셩그룹 +30.00%` — **주식병합(무액면주식) 주권 변경상장**
+
+`설명되지 않는 극단 변동`은 ⚠ 를 달지 않는다. '검사했고 인위적 요인이 없었다'는 결과라
+경고로 띄우면 급등 상위가 전부 ⚠ 로 도배돼 진짜 경고가 묻힌다.
+대신 검사가 돌았다는 사실을 `확인 필요` 에 남긴다.
 
 ## 3. 신호 규칙 — 임계값은 이 파일에서 바꾼다
 
@@ -39,9 +64,12 @@ python3 -m src.pipelines.dashboard        # 브리핑 + 콕핏 + HTML 대시보�
 | 밤사이 ±5% 이상 이동 | `RUN_PRICE_DECODER` |
 | 해외 비중 70% 초과 | `CHECK_FX_EXPOSURE` |
 | 필수 데이터 미확보 | `DATA_GAP` |
+| 랭킹 등락률을 그대로 읽을 수 없음 | `DATA_GAP` (티커 지정 · 정황과 공시를 근거로 첨부) |
 
 숫자를 바꾸려면 `src/pipelines/daily_brief.py` 상단 상수만 고친다
-(`MOVE_THRESHOLD`, `EARNINGS_WINDOW`, `FOREIGN_HEAVY`). 소스·계산 계층은 건드리지 않는다.
+(`MOVE_THRESHOLD`, `EARNINGS_WINDOW`, `FOREIGN_HEAVY`, `ANOMALY_MAX_LOOKUPS`).
+이상치 임계값은 `src/core/anomalies.py` 상단에 있다
+(`EXTREME_MOVE`, `HALT_MIN_SESSIONS`, `SPLIT_RATIOS`). 소스·계산 계층은 건드리지 않는다.
 
 **`SignalKind` 에 매수·매도 항목이 없다.** 구조적으로 매매 신호를 낼 수 없고,
 `Signal.reason` 에 매매 표현을 쓰면 `ValueError` 가 난다.
@@ -74,5 +102,6 @@ python3 -m src.pipelines.dashboard        # 브리핑 + 콕핏 + HTML 대시보�
 `company-decoder`)를 돌릴지만 제시한다. 신호를 받아 이어서 실행할 수 있다.
 
 ## 모듈
-`pipelines/{daily_brief,dashboard}` · `sources/{toss,fred,frankfurter,prices,websearch}` ·
-`models.Signal` · `portfolio_io`
+`pipelines/{daily_brief,dashboard}` · `core/anomalies` ·
+`sources/{toss,fred,frankfurter,prices,open_dart,websearch}` ·
+`models.{Signal,Market}` · `portfolio_io`

@@ -27,6 +27,7 @@ import re
 import threading
 import traceback
 import urllib.parse
+from html import escape as html_escape
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date
@@ -223,6 +224,26 @@ def compare_page(job: BatchJob) -> str:
     return compare.render(ok, bad)
 
 
+#: 코드를 고친 뒤 서버를 재시작하지 않으면 나는 오류. serve 가 compare 를 지연 import 해서
+#: 한쪽만 새 코드가 되기 때문이다. 로그를 뒤지게 하지 말고 화면에서 바로 알려준다.
+_STALE_HINT = ("<p class=\"hint\"><b>코드를 방금 고쳤다면 서버를 재시작하세요.</b><br>"
+               "이 서버는 시작 시점의 모듈을 메모리에 들고 있습니다. 일부만 새 코드로 바뀌면 "
+               "이런 <code>AttributeError</code> 가 납니다.<br>"
+               "터미널에서 <code>Ctrl+C</code> 후 "
+               "<code>python3 -m src.pipelines.serve</code> 를 다시 실행하십시오.</p>")
+
+_ERROR = """<!doctype html><meta charset="utf-8"><title>비교 페이지 생성 실패</title>
+<style>body{{font:16px/1.75 "Noto Sans KR",sans-serif;max-width:680px;margin:4rem auto;
+padding:0 1.5rem;color:#1a2228}}code{{background:#eef1f3;padding:.15rem .4rem;border-radius:4px}}
+pre{{background:#eef1f3;padding:.9rem 1rem;border-radius:8px;overflow-x:auto;font-size:.85rem}}
+.hint{{border-left:3px solid #8a6414;background:#f6ecd6;color:#8a6414;
+padding:.85rem 1.1rem;border-radius:0 8px 8px 0}}a{{color:#0f7268}}</style>
+<h1>비교 페이지를 만들지 못했습니다</h1>
+<pre>{kind}: {msg}</pre>
+{hint}
+<p>개별 종목 페이지는 파일로 남아 있으니 <a href="/">대시보드</a>에서 그대로 열 수 있습니다.</p>"""
+
+
 _MISSING = """<!doctype html><meta charset="utf-8"><title>{t} — 생성 필요</title>
 <style>body{{font:16px/1.7 "Noto Sans KR",sans-serif;max-width:640px;margin:4rem auto;
 padding:0 1.5rem;color:#1a2228}}code{{background:#eef1f3;padding:.15rem .4rem;border-radius:4px}}
@@ -310,10 +331,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 self._send(compare_page(job).encode("utf-8"))
-            except Exception:
+            except Exception as exc:
                 traceback.print_exc()
-                self._send("<p>비교 페이지 생성 실패 — 서버 로그를 확인하세요.</p>"
-                           .encode("utf-8"), code=500)
+                self._send(_ERROR.format(
+                    kind=html_escape(type(exc).__name__),
+                    msg=html_escape(str(exc)[:400]),
+                    hint=_STALE_HINT if isinstance(exc, AttributeError) else "",
+                ).encode("utf-8"), code=500)
             return
 
         if path.startswith("/stocks/"):
