@@ -142,6 +142,20 @@ a.stk:hover .go{{text-decoration:underline}}
 .bstat.running{{border-color:var(--acc);color:var(--acc);background:var(--accs)}}
 .bstat.ok{{border-color:var(--up);color:var(--up);background:var(--ups)}}
 .bstat.error{{border-color:var(--warn);color:var(--warn);background:var(--warns)}}
+.mlist{{max-height:430px;overflow-y:auto;border:1px solid var(--line2);border-radius:9px;
+ background:var(--card)}}
+.mrow{{display:flex;align-items:center;gap:.6rem;padding:.45rem .7rem;font-size:.84rem;
+ border-bottom:1px solid var(--line2)}}
+.mrow:last-child{{border-bottom:0}}
+.mrow:hover{{background:var(--card2)}}
+.mrow .rk{{font-family:"IBM Plex Mono",monospace;font-size:.72rem;color:var(--mut);
+ width:1.6rem;text-align:right;flex:none}}
+.mrow .nm2{{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+ font-weight:500}}
+.mrow .tk2{{font-family:"IBM Plex Mono",monospace;font-size:.72rem;color:var(--mut);
+ flex:none}}
+.mrow .mv{{font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--fg2);
+ flex:none;text-align:right;min-width:4.6rem}}
 </style></head><body><div class="w">
 <header><h1>투자 리서치 대시보드</h1>
 <div class="sub">{on} · 매매 판단은 사람이 합니다. 이 화면은 어디를 더 볼지만 제시합니다.</div>
@@ -165,7 +179,7 @@ a.stk:hover .go{{text-decoration:underline}}
  <div id="prog" class="prog" hidden></div>
 </div>
 <nav><a href="#market">증시 현황</a><a href="#macro">매크로</a><a href="#holdings">보유 종목</a>
-<a href="#major">주요 종목</a><a href="#events">이벤트</a>{watchnav}<a href="#signals">액션 신호</a><a href="#cockpit">포트폴리오</a></nav>
+<a href="#majors">주요 기업</a><a href="#major">주요 종목</a><a href="#events">이벤트</a>{watchnav}<a href="#signals">액션 신호</a><a href="#cockpit">포트폴리오</a></nav>
 </header>
 {body}
 <script>
@@ -568,6 +582,38 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                        f'{h["value"]:,.0f}' if h["value"] else "—"])
         P.append('<section id="holdings"><h2>보유 종목 밤사이 움직임</h2>'
                  + _table(["종목", "현재가", "변동", "평가액"], hr) + '</section>')
+
+    # 주요 기업 — 체크박스로 골라 한 번에 분석하는 출발점.
+    # "주요"를 임의로 정하지 않는다. 시장마다 출처가 있는 기준을 쓰고 그 기준을 화면에 적는다
+    # (pipelines/majors.py). 미국은 지수 편입(1차), 한국은 시가총액(파생·2차).
+    from . import majors as mj
+    blocks = []
+    for code, lab, how in (("KR", "한국", "시가총액 상위"),
+                           ("US", "미국", "S&P 500 편입 비중 상위")):
+        got = mj.korea() if code == "KR" else mj.usa()
+        if isinstance(got, Unavailable):
+            blocks.append(f'<div class="mkt"><div class="lab">{lab}</div>'
+                          f'<p class="src">{escape(got.cite())}</p></div>')
+            continue
+        rows = "".join(
+            f'<label class="mrow"><input type="checkbox" class="pick" '
+            f'data-s="{escape(m.ticker)}" data-n="{escape(m.name)}">'
+            f'<span class="rk">{m.rank}</span>'
+            f'<span class="nm2">{escape(m.name)}</span>'
+            f'<span class="tk2">{escape(m.ticker)}</span>'
+            f'<span class="mv">{escape(m.metric_text)}</span></label>'
+            for m in got.value)
+        blocks.append(f'<div class="mkt"><div class="lab">{lab} '
+                      f'<span class="chip">{how} {len(got.value)}</span></div>'
+                      f'<div class="mlist">{rows}</div>'
+                      f'<p class="src" style="margin-top:.5rem">{escape(got.cite())}</p></div>')
+    P.append('<section id="majors"><h2>주요 기업 '
+             '<span class="chip">체크해서 한 번에 분석</span></h2>'
+             '<p class="src" style="margin:0 0 .9rem">여러 종목을 체크하고 위 '
+             '<b>분석</b> 버튼을 누르면 동시에 만들어 비교 페이지로 엽니다. '
+             '한국은 시가총액이 <b>파생값</b>(주가 × 발행주식수)이고, '
+             '미국은 지수 편입 비중이라 기준이 다릅니다 — 두 열의 숫자를 직접 비교하지 마십시오.</p>'
+             f'<div class="grid2">{"".join(blocks)}</div></section>')
 
     # 주요 종목 — 시장별로 거래대금·급등·급락 셋을 나란히 둔다.
     # 한쪽 시장만 급등, 다른 쪽만 급락을 보여주면 어느 방향이 센지 비교가 안 된다.

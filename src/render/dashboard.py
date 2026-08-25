@@ -172,8 +172,12 @@ def _kpi(lab: str, val: str, delta: str = "") -> str:
     return f'<div class="kpi"><span class="lab">{escape(lab)}</span><span class="val">{val}</span>{d}</div>'
 
 
-def _table(headers: list[str], rows: list[list[str]], numeric_from: int = 1) -> str:
-    h = "".join(f'<th{" class=n" if i >= numeric_from else ""}>{escape(x)}</th>'
+def _table(headers: list[str], rows: list[list[str]], numeric_from: int = 1,
+           *, raw_headers: bool = False) -> str:
+    """raw_headers=True 면 헤더를 escape 하지 않는다 — 용어 설명 ⓘ 같은 마크업을 넣을 때.
+    그때는 `_kpi` 의 delta 와 마찬가지로 **호출부가 escape 책임을 진다.**"""
+    h = "".join(f'<th{" class=n" if i >= numeric_from else ""}>'
+                f'{x if raw_headers else escape(x)}</th>'
                 for i, x in enumerate(headers))
     b = "".join("<tr>" + "".join(
         f'<td{" class=n" if i >= numeric_from else ""}>{c}</td>' for i, c in enumerate(r)

@@ -60,6 +60,10 @@ class StockPage:
     notes: list[str] = field(default_factory=list)
 
 
+#: sec_segments 의 표 키 → 사람이 읽는 축 이름
+SEGMENT_AXIS = {"segment": "부문별", "product": "제품별", "geography": "지역별"}
+
+
 @dataclass(frozen=True)
 class Summary:
     """비교 표 한 줄. `StockPage` 를 통째로 들고 있지 않기 위한 압축.
@@ -84,6 +88,7 @@ class Summary:
     quality_text: str = ""
     top_segment: str = ""
     top_segment_share: float | None = None
+    top_segment_kind: str = ""               # 부문별 · 제품별 · 지역별
     reaction_median: float | None = None
     reaction_n: int = 0
     has_narrative: bool = False
@@ -117,10 +122,13 @@ def summarize(p: StockPage) -> Summary:
         vals = cd._vals(c.fcf)
         if vals:
             fcf_latest, fcf_avg = vals[-1][1], normalized_base(vals)
-    seg_name, seg_share = "", None
+    seg_name, seg_share, seg_kind = "", None, ""
     if c.segments is not None and getattr(c.segments, "tables", None):
-        # 가장 앞선 표(부문별)의 최대 비중 항목. 매출이 어디에 쏠려 있는지의 대리 지표다.
-        first = next(iter(c.segments.tables.values()), None)
+        # 가장 앞선 표의 최대 비중 항목. 매출이 어디에 쏠려 있는지의 대리 지표다.
+        # 어느 축인지 함께 들고 간다 — 애플처럼 '부문'이 곧 지역인 회사가 있어
+        # 축을 밝히지 않으면 'Americas 43%' 가 사업부문으로 읽힌다.
+        key, first = next(iter(c.segments.tables.items()), ("", None))
+        seg_kind = SEGMENT_AXIS.get(key, key)
         rows = first.shares() if first is not None else []
         if rows:
             seg_name, _v, seg_share, _m = rows[0]
@@ -136,7 +144,7 @@ def summarize(p: StockPage) -> Summary:
         fcf_latest=fcf_latest, fcf_avg=fcf_avg,
         quality_flag=getattr(p.quality, "flag", "") if p.quality else "",
         quality_text=str(p.quality) if p.quality else "",
-        top_segment=seg_name, top_segment_share=seg_share,
+        top_segment=seg_name, top_segment_share=seg_share, top_segment_kind=seg_kind,
         reaction_median=p.stat.median_abs if p.stat else None,
         reaction_n=p.stat.n if p.stat else 0,
         has_narrative=not p.narrative.is_empty,
