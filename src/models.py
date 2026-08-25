@@ -121,6 +121,27 @@ class Filing:
 
 
 @dataclass(frozen=True)
+class CorporateAction:
+    """가격 비교 가능성을 깨는 기업행위 공시 1건.
+
+    액면분할·병합·감자·거래정지·상장폐지가 여기 들어온다.
+    급등락 랭킹의 등락률이 왜 그 값인지 **확정**하는 근거다 (core/anomalies.py 는 정황까지만 만든다).
+    """
+
+    ticker: str
+    filed_on: date
+    title: str              # 공시 제목 원문 (report_nm)
+    accession: str | None = None
+
+    @property
+    def url(self) -> str:
+        return f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={self.accession or ''}"
+
+    def __str__(self) -> str:
+        return f"{self.filed_on.isoformat()} {self.title}"
+
+
+@dataclass(frozen=True)
 class FinancialFact:
     """재무 사실 1건. 값은 반드시 Sourced로 감싸서 다닌다 (provenance.py 참조)."""
 

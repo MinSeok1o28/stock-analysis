@@ -126,6 +126,14 @@ td.n,th.n{text-align:right;white-space:nowrap}
 .note{border-left:3px solid var(--warn);background:var(--warns);color:var(--warn);
   border-radius:0 7px 7px 0;padding:.8rem 1rem;font-size:.86rem;line-height:1.65}
 .note.calm{border-left-color:var(--acc);background:var(--accs);color:var(--fg2)}
+
+/* ── 급등락 이상치 경고 (core/anomalies.py) ─────────────── */
+.warnmark{color:var(--warn);font-weight:700;cursor:help}
+.warn{border-left:3px solid var(--warn);background:var(--warns);
+  border-radius:0 7px 7px 0;padding:.6rem .85rem;margin:.5rem 0 0;font-size:.8rem}
+.warn>strong{color:var(--warn);display:block;margin-bottom:.35rem}
+.warn ul{font-size:.78rem;gap:.3rem;line-height:1.55}
+.warn a{color:var(--warn)}
 ul{margin:0;padding-left:1.15rem;display:flex;flex-direction:column;gap:.45rem;
   font-size:.89rem;line-height:1.7}
 li::marker{color:var(--acc)}

@@ -10,6 +10,7 @@ from datetime import date
 from html import escape
 from pathlib import Path
 
+from ..core import anomalies as anom
 from ..core.valuation.concentration import effective_positions, hhi
 from ..core.valuation.fx_exposure import sensitivity
 from ..provenance import Unavailable
@@ -272,16 +273,47 @@ def _name_cell(symbol: str, names: dict[str, str]) -> str:
             f'<span class="src" style="font-size:.68rem">{escape(symbol)}</span>')
 
 
-def _rank_table(v, title: str, names: dict[str, str] | None = None) -> str:
+def _warn_block(b, symbols: list[str]) -> str:
+    """급등락 이상치 경고. 정황(일봉) 아래에 확정(공시, 1차) 을 붙인다.
+
+    등락률을 지우지 않는다 — 벤더가 준 값은 사실이고, 그 값을 어떻게 읽어야 하는지를 덧붙인다.
+    """
+    out: list[str] = []
+    for sym in symbols:
+        hits = anom.warnings(b.anomalies.get(sym, []))
+        if not hits:
+            continue
+        li = [f'<li>{escape(str(h))}</li>' for h in hits]
+        act = b.actions.get(sym)
+        if isinstance(act, Unavailable):
+            li.append(f'<li class="src">확정: {escape(act.cite())}</li>')
+        elif act is not None and act.value:
+            li += [f'<li>공시 확정 — <a href="{escape(a.url)}" target="_blank" rel="noopener">'
+                   f'{escape(a.title)}</a> <span class="src">{a.filed_on.isoformat()}</span></li>'
+                   for a in act.value[:3]]
+            li.append(f'<li class="src">{escape(act.cite())}</li>')
+        elif act is not None:
+            li.append('<li>최근 기업행위 공시 없음 — 분할·병합·정지로 설명되지 않는다</li>')
+            li.append(f'<li class="src">{escape(act.cite())}</li>')
+        out.append(f'<div class="warn"><strong>⚠ {escape(b.label(sym))}</strong>'
+                   f'<ul>{"".join(li)}</ul></div>')
+    return "".join(out)
+
+
+def _rank_table(v, title: str, names: dict[str, str] | None = None, b=None) -> str:
     names = names or {}
     if isinstance(v, Unavailable):
         return f'<h3>{escape(title)}</h3><p class="src">{escape(v.cite())}</p>'
-    rows = [[f"{x['rank']}", _name_cell(x["symbol"], names),
+    def mark(sym: str) -> str:
+        return (' <span class="warnmark" title="등락률을 그대로 읽을 수 없다">⚠</span>'
+                if b is not None and anom.warnings(b.anomalies.get(sym, [])) else "")
+    rows = [[f"{x['rank']}", _name_cell(x["symbol"], names) + mark(x["symbol"]),
              f"{x['last']:,.2f}", _mv(x["change_rate"])]
             for x in v.value]
+    warn = _warn_block(b, [x["symbol"] for x in v.value]) if b is not None else ""
     return (f'<h3>{escape(title)}</h3>'
             + _table(["#", "종목", "현재가", "변동"], rows, numeric_from=2)
-            + f'<p class="src">{escape(v.cite())}</p>')
+            + f'<p class="src">{escape(v.cite())}</p>' + warn)
 
 
 def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
@@ -355,10 +387,10 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
     # 주요 종목
     P.append('<section id="major"><h2>주요 종목 <span class="chip">보유 외</span></h2>'
              '<div class="grid2">'
-             + f'<div>{_rank_table(b.rankings.get("KR_amount"), "한국 거래대금 상위", b.names)}</div>'
-             + f'<div>{_rank_table(b.rankings.get("US_amount"), "미국 거래대금 상위", b.names)}</div>'
-             + f'<div>{_rank_table(b.rankings.get("KR_losers"), "한국 급락", b.names)}</div>'
-             + f'<div>{_rank_table(b.rankings.get("US_gainers"), "미국 급등", b.names)}</div>'
+             + f'<div>{_rank_table(b.rankings.get("KR_amount"), "한국 거래대금 상위", b.names, b)}</div>'
+             + f'<div>{_rank_table(b.rankings.get("US_amount"), "미국 거래대금 상위", b.names, b)}</div>'
+             + f'<div>{_rank_table(b.rankings.get("KR_losers"), "한국 급락", b.names, b)}</div>'
+             + f'<div>{_rank_table(b.rankings.get("US_gainers"), "미국 급등", b.names, b)}</div>'
              + '</div></section>')
 
     # 관심 종목 · 실적 캘린더 (공개 모드에서는 통째로 제외)

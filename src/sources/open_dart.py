@@ -15,12 +15,12 @@ from __future__ import annotations
 import io
 import os
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from xml.etree import ElementTree as ET
 
 import requests
 
-from ..models import Filing, FinancialFact, Market
+from ..models import CorporateAction, Filing, FinancialFact, Market
 from ..provenance import Sourced, Unavailable, primary_api
 from ._http import CACHE_DIR, SourceUnavailable, get_json, require_env, throttle
 
@@ -234,6 +234,71 @@ def annual_filings(ticker: str, limit: int = 3) -> list[Filing] | Unavailable:
         if len(out) >= limit:
             break
     return out or Unavailable(f"{ticker} 사업보고서 목록", "정기공시에 사업보고서 없음")
+
+
+#: 가격 비교 가능성을 깨는 공시. report_nm 부분일치로 거른다.
+#: DART 는 공시유형 코드로 이걸 한 번에 뽑아주지 않는다 — 제목 매칭이 현실적인 방법이다.
+ACTION_KEYWORDS = (
+    "분할", "병합", "감자", "액면",                      # 주식 수 자체가 바뀌는 것
+    "거래정지", "정리매매", "상장폐지", "상장적격성", "관리종목",  # 거래가 끊겼던 것
+    "무상증자", "유상증자",                              # 권리락으로 기준가가 바뀌는 것
+)
+
+ACTION_LOOKBACK_DAYS = 120
+
+
+def corporate_actions(ticker: str, days: int = ACTION_LOOKBACK_DAYS
+                      ) -> Sourced[list[CorporateAction]] | Unavailable:
+    """최근 `days` 일 기업행위 공시. 급등락 이상치의 원인을 **확정**하는 1차 근거.
+
+    `core/anomalies.py` 는 일봉만 보고 정황까지만 만든다. 정지였는지 분할이었는지,
+    아니면 실제 급락이었는지는 여기서 갈린다 — 정황과 확정을 섞지 않는다.
+
+    빈 리스트도 정상 응답이다. "해당 기간 기업행위 공시 없음" 이라는 사실이기 때문이다.
+    """
+    cc = corp_code(ticker)
+    if isinstance(cc, Unavailable):
+        return cc
+    end = date.today()
+    bgn = end - timedelta(days=max(1, days))
+    params = {"crtfc_key": _key(), "corp_code": cc,
+              "bgn_de": bgn.strftime("%Y%m%d"), "end_de": end.strftime("%Y%m%d"),
+              "page_count": "100"}
+    try:
+        d = get_json(f"{BASE}/list.json", params=params,
+                     cache_key=f"actions_{cc}_{bgn:%Y%m%d}", ttl_sec=21_600,
+                     min_interval=MIN_INTERVAL)
+    except SourceUnavailable as exc:
+        return Unavailable(f"{ticker} 기업행위 공시", f"{NAME}: {exc}")
+    if d.get("status") == "013":       # 조회 결과 없음 — 오류가 아니라 사실이다
+        return Sourced([], _action_source(ticker, cc, bgn, end))
+    if d.get("status") != "000":
+        return Unavailable(f"{ticker} 기업행위 공시",
+                           f"{NAME}: {d.get('status')} {d.get('message', '')}")
+
+    out: list[CorporateAction] = []
+    for it in d.get("list", []):
+        nm = (it.get("report_nm") or "").strip()
+        if not any(k in nm for k in ACTION_KEYWORDS):
+            continue
+        raw = it.get("rcept_dt") or ""
+        if len(raw) != 8:
+            continue
+        out.append(CorporateAction(
+            ticker.upper(),
+            date.fromisoformat(f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"),
+            " ".join(nm.split()),          # DART 제목은 공백이 여러 칸 들어 있다
+            it.get("rcept_no")))
+    out.sort(key=lambda x: x.filed_on, reverse=True)
+    return Sourced(out, _action_source(ticker, cc, bgn, end))
+
+
+def _action_source(ticker: str, cc: str, bgn: date, end: date):
+    return primary_api(
+        f"{NAME} 공시목록 {ticker}",
+        f"https://opendart.fss.or.kr/api/list.json?corp_code={cc}"
+        f"&bgn_de={bgn:%Y%m%d}&end_de={end:%Y%m%d}",
+        section=f"{bgn.isoformat()}~{end.isoformat()} 기업행위 키워드 매칭")
 
 
 def filing_viewer_url(filing: Filing) -> str:

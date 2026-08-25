@@ -11,11 +11,13 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from ..models import Market, Signal, SignalKind
+from ..core import anomalies as anom
+from ..models import (CorporateAction, Market, Signal,
+                      SignalKind)
 from ..portfolio_io import (Portfolio, WatchItem, load_holdings, load_watchlist,
                             upcoming_earnings)
 from ..provenance import Sourced, Unavailable, record
-from ..sources import frankfurter, fred, prices, toss
+from ..sources import frankfurter, fred, open_dart, prices, toss
 
 REPORT_DIR = Path("reports/daily")
 
@@ -23,6 +25,8 @@ MOVE_THRESHOLD = 0.05        # 밤사이 ±5% → 가격 판독기 권장
 EARNINGS_WINDOW = 7          # 실적 7일 이내 → 스토리 리더 권장
 FX_MOVE_THRESHOLD = 0.02
 FOREIGN_HEAVY = 0.70
+ANOMALY_MAX_LOOKUPS = 6      # 일봉 대조는 API 호출이다 — 극단 변동 상위 몇 개만 본다
+ACTION_LOOKBACK_DAYS = 120   # 공시 조회 기간
 
 
 @dataclass
@@ -38,6 +42,10 @@ class BriefResult:
     rankings: dict[str, Sourced[list[dict]] | Unavailable]
     watch: list[Sourced[WatchItem]]
     earnings_soon: list[Sourced[WatchItem]]
+    #: 심볼 → 랭킹 등락률을 액면 그대로 읽으면 안 되는 이유 (core/anomalies.py)
+    anomalies: dict[str, list[anom.Anomaly]] = field(default_factory=dict)
+    #: 심볼 → 그 이유를 확정하는 공시 (1차). 한국 종목만 — DART 만 이 조회를 제공한다
+    actions: dict[str, Sourced[list[CorporateAction]] | Unavailable] = field(default_factory=dict)
     signals: list[Signal] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     names: dict[str, str] = field(default_factory=dict)
@@ -50,6 +58,56 @@ class BriefResult:
 
 def _pct(x) -> str:
     return "—" if x is None else f"{x:+.2%}"
+
+
+def _rank_candidates(rk: dict) -> list[tuple[str, str, float]]:
+    """검사할 랭킹 줄만 골라 (심볼, 시장, 등락률) 로. 극단 변동 순, 심볼 중복 제거.
+
+    전 종목을 일봉과 대조하면 랭킹 1회당 수십 콜이 된다. ±EXTREME_MOVE 이상만,
+    그중에서도 상위 ANOMALY_MAX_LOOKUPS 개만 본다.
+    """
+    seen: dict[str, tuple[str, str, float]] = {}
+    for key, v in rk.items():
+        if isinstance(v, Unavailable):
+            continue
+        mkt = key.split("_")[0]
+        for x in v.value:
+            sym, rate = x.get("symbol") or "", x.get("change_rate")
+            if not sym or rate is None or abs(rate) < anom.EXTREME_MOVE:
+                continue
+            if sym not in seen or abs(rate) > abs(seen[sym][2]):
+                seen[sym] = (sym, mkt, rate)
+    return sorted(seen.values(), key=lambda t: -abs(t[2]))[:ANOMALY_MAX_LOOKUPS]
+
+
+def _inspect_rankings(rk: dict) -> tuple[dict[str, list[anom.Anomaly]], dict]:
+    """정황(일봉) → 확정(공시) 순서로 이상치를 조사한다.
+
+    공시 확정은 한국 종목만 된다. DART 만 이 조회를 제공하고, SEC 에는 대응물이 없다 —
+    미국 종목은 정황까지만 남기고 그 한계를 산출물에 적는다.
+    """
+    found: dict[str, list[anom.Anomaly]] = {}
+    actions: dict[str, Sourced[list[CorporateAction]] | Unavailable] = {}
+    for sym, mkt, rate in _rank_candidates(rk):
+        c = toss.daily_candles(sym, count=30)
+        if isinstance(c, Unavailable):
+            found[sym] = [anom.Anomaly(anom.AnomalyKind.NO_HISTORY,
+                                       f"일봉 미확보 — {c.reason[:60]}",
+                                       invalidates_rate=True)]
+            continue
+        hits = anom.inspect(rate, c.value)
+        if not hits:
+            continue
+        found[sym] = hits
+        if anom.worth_checking(hits):
+            if mkt == "KR":
+                actions[sym] = open_dart.corporate_actions(sym, ACTION_LOOKBACK_DAYS)
+            else:
+                actions[sym] = Unavailable(
+                    f"{sym} 기업행위 공시",
+                    "미국 종목은 기업행위 공시 목록 조회를 붙이지 않았다 — "
+                    "SEC 에 DART list.json 대응물이 없다")
+    return found, actions
 
 
 def run(on: date | None = None) -> BriefResult:
@@ -118,6 +176,33 @@ def run(on: date | None = None) -> BriefResult:
         rk[f"{mkt}_losers"] = toss.rankings("TOP_LOSERS", mkt, "1d", count=5)
         rk[f"{mkt}_gainers"] = toss.rankings("TOP_GAINERS", mkt, "1d", count=5)
 
+    # ── 급등락 이상치 판별 ──────────────────────────────────────
+    # 랭킹 등락률을 액면 그대로 실으면 거래정지 재개·신규상장·분할이 '급락'으로 섞여 온다.
+    # 일봉으로 정황을 만들고(core/anomalies), 한국 종목은 공시로 확정한다(DART, 1차).
+    anomalies, actions = _inspect_rankings(rk)
+    for sym, hits in anomalies.items():
+        if not any(h.invalidates_rate for h in hits):
+            continue
+        why = " · ".join(h.kind.value for h in hits if h.invalidates_rate)
+        ev = [a.detail for a in hits]
+        act = actions.get(sym)
+        if act is not None and not isinstance(act, Unavailable) and act.value:
+            ev.append(act.cite())
+        signals.append(Signal(
+            SignalKind.DATA_GAP, sym,
+            f"랭킹 등락률을 그대로 읽을 수 없다 ({why}) — 원문 확인 필요",
+            tuple(ev)))
+
+    if anomalies:
+        bad = [k for k, v in anomalies.items() if anom.warnings(v)]
+        notes.append(
+            f"급등락 상위 {len(anomalies)}종목을 일봉과 대조했다 — "
+            f"등락률을 그대로 읽을 수 없는 종목 {len(bad)}개"
+            + (f" ({', '.join(bad)})" if bad else ""))
+        if any(isinstance(a, Unavailable) for a in actions.values()):
+            notes.append("미국 종목은 기업행위 공시 확정을 붙이지 않았다 — "
+                         "SEC 에 DART list.json 대응물이 없다 (정황까지만)")
+
     # ── 관심 종목 · 실적 임박 ───────────────────────────────────
     wl = load_watchlist()
     watch = [] if isinstance(wl, Unavailable) else wl
@@ -167,7 +252,38 @@ def run(on: date | None = None) -> BriefResult:
         notes.append("종목명 미확보 — 심볼로만 표시된다")
 
     return BriefResult(on, kr, us, macro, fx_toss, fx_ecb, rows, port, rk,
-                       watch, soon, signals, notes, name_map)
+                       watch, soon, anomalies=anomalies, actions=actions,
+                       signals=signals, notes=notes, names=name_map)
+
+
+def _warn_mark(r: BriefResult, symbol: str) -> str:
+    return " ⚠" if anom.warnings(r.anomalies.get(symbol, [])) else ""
+
+
+def _anomaly_block(r: BriefResult, symbols: list[str]) -> list[str]:
+    """표 아래 경고 블록. 정황(일봉)과 확정(공시)을 줄을 나눠 적는다.
+
+    등락률을 지우지 않는다 — 벤더가 준 값은 사실이고, 그 값을 어떻게 읽어야 하는지를 덧붙인다.
+    """
+    L: list[str] = []
+    for sym in symbols:
+        hits = anom.warnings(r.anomalies.get(sym, []))
+        if not hits:
+            continue
+        L.append(f"> ⚠ **{r.label(sym)}**")
+        L += [f"> - [사실] {h}" for h in hits]
+        act = r.actions.get(sym)
+        if isinstance(act, Unavailable):
+            L.append(f"> - 확정: {act.cite()}")
+        elif act is not None and act.value:
+            L += [f"> - [사실] 공시 확정 — {a.title} ({a.filed_on.isoformat()}) · {a.url}"
+                  for a in act.value[:3]]
+            L.append(f">   ↳ {act.cite()}")
+        elif act is not None:
+            L.append("> - [사실] 최근 기업행위 공시 없음 — 분할·병합·정지로 설명되지 않는다")
+            L.append(f">   ↳ {act.cite()}")
+        L.append(">")
+    return L + [""] if L else []
 
 
 def to_markdown(r: BriefResult) -> str:
@@ -207,9 +323,11 @@ def to_markdown(r: BriefResult) -> str:
             L += [f"### {title}", "", f"- {v.cite()}", ""]
             continue
         L += [f"### {title}", "", "| # | 종목 | 현재가 | 변동 |", "|---:|---|---:|---:|"]
-        L += [f"| {x['rank']} | {r.label(x['symbol'])} | {x['last']:,.2f} | {_pct(x['change_rate'])} |"
+        L += [f"| {x['rank']} | {r.label(x['symbol'])}{_warn_mark(r, x['symbol'])} | "
+              f"{x['last']:,.2f} | {_pct(x['change_rate'])} |"
               for x in v.value]
         L += ["", f"↳ {v.cite()}", ""]
+        L += _anomaly_block(r, [x["symbol"] for x in v.value])
 
     L += ["## 오늘의 액션 신호", ""]
     if r.signals:

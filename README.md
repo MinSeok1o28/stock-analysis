@@ -15,6 +15,7 @@
 - **가격 판독기** — 역DCF로 "이 가격이 요구하는 성장률"을 이분법으로 역산 + WACC 민감도
 - **스토리 리더** — 연도별 공시 문구 비교 (신규/삭제 문장, `will→may` 톤다운, 헤지 어휘 증감)
 - **액션 신호** — 매수·매도가 아니라 **어느 딥다이브를 돌릴지**만 제시
+- **급등락 이상치 경고** — 거래정지 재개·신규상장·액면분할을 걸러내고, 한국 종목은 DART 공시로 원인을 확정
 
 ## 빠른 시작
 
@@ -26,7 +27,7 @@ cp portfolio/holdings.example.yaml portfolio/holdings.yaml
 cp portfolio/watchlist.example.yaml portfolio/watchlist.yaml
 
 python3 -m src.config                       # 무엇이 되고 안 되는지 진단
-python3 -m unittest discover -s tests -t . -q   # 154개 테스트
+python3 -m unittest discover -s tests -t . -q   # 174개 테스트
 python3 -m src.pipelines.dashboard          # → dashboard/index.html
 ```
 
@@ -96,6 +97,7 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | 가정이 숨지 않게 | `basis_comparison()` 최신/3년평균 병기 · `growth_axes()` 구간 병기 | — |
 | 변화 없으면 "변화 없음" | `sentence_diff.SentenceDiff.is_material` | — |
 | **매매 신호 금지** | `SignalKind` 에 매매 항목 부재 + `Signal` 이 매매 표현 거부 | `ValueError` |
+| 벤더 등락률을 그대로 믿지 않음 | `core/anomalies.py` 정황 → `open_dart.corporate_actions()` 확정 | — |
 | 브로커 주문 경로 차단 | `toss.ALLOWED_PATHS` + 계좌 헤더 미생성 | `OrderPathBlocked` |
 | 계층 의존 방향 | `tests/test_layering.py` | 테스트 실패 |
 
@@ -141,6 +143,7 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | **세그먼트·제품·지역별 매출** | 동작 · SEC 렌더링 재무제표(R-file) · 키 불필요 |
 | 순부채·총차입 추이 | 동작 · 미국 |
 | **이벤트 스캐너 + 과거 반응 시나리오** | 동작 · SEC 8-K + 일봉 · 키 불필요 |
+| **급등락 이상치 경고** | 동작 · 한국은 DART 공시로 확정 / 미국은 정황까지 |
 | **종목 상세 페이지 (사실 + 서사)** | 동작 · `dashboard/stocks/<티커>.html` |
 | **종목 검색 + 온디맨드 생성** | 동작 · 7,673종목 자동완성 · 로컬 서버 필요 |
 | **서사 자동 작성** | 동작 · `claude` CLI 호출 · 별도 API 키 불필요 |
