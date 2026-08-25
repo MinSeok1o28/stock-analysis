@@ -11,6 +11,7 @@ import unittest
 
 from src.core.anomalies import (Anomaly, AnomalyKind, inspect, warnings,
                                 worth_checking)
+from src.models import Market
 from src.sources.open_dart import ACTION_KEYWORDS
 
 
@@ -150,6 +151,29 @@ class TestActionKeywords(unittest.TestCase):
         for nm in self.MISSES:
             with self.subTest(nm=nm):
                 self.assertFalse(any(k in nm for k in ACTION_KEYWORDS))
+
+
+class TestMarketOfTicker(unittest.TestCase):
+    """대시보드가 한국·미국을 나눠 보여주려면 티커만으로 시장을 갈라야 한다."""
+
+    def test_krx_numeric_codes(self) -> None:
+        for t in ("005930", "096610", "900270", "019175"):
+            with self.subTest(t=t):
+                self.assertIs(Market.of_ticker(t), Market.KR)
+
+    def test_krx_new_style_codes_have_letters(self) -> None:
+        """0155E0·0220W0 처럼 문자가 섞여도 첫 글자는 숫자다."""
+        for t in ("0155E0", "0220W0", "0068Y0"):
+            with self.subTest(t=t):
+                self.assertIs(Market.of_ticker(t), Market.KR)
+
+    def test_us_tickers(self) -> None:
+        for t in ("AAPL", "NVDA", "SPY", "BRK.B", "F"):
+            with self.subTest(t=t):
+                self.assertIs(Market.of_ticker(t), Market.US)
+
+    def test_six_letter_us_ticker_is_not_kr(self) -> None:
+        self.assertIs(Market.of_ticker("GOOGLE"), Market.US)
 
 
 class TestAnomalyRendering(unittest.TestCase):

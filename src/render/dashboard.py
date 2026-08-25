@@ -58,13 +58,13 @@ _CSS = """
 
 *{box-sizing:border-box}
 body{
-  background:var(--bg); color:var(--fg); margin:0; padding:2.2rem 1.25rem 6rem;
+  background:var(--bg); color:var(--fg); margin:0; padding:2.2rem 1.5rem 6rem;
   font-family:"Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",
               ui-sans-serif,system-ui,sans-serif;
   font-size:16px; line-height:1.75; letter-spacing:-.005em;
   -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
 }
-.w{max-width:940px;margin:0 auto;display:flex;flex-direction:column;gap:1.6rem}
+.w{max-width:1560px;margin:0 auto;display:flex;flex-direction:column;gap:1.6rem}
 
 /* ── 타이포 ───────────────────────────────────────────── */
 h1{font-size:1.72rem;font-weight:700;margin:0;letter-spacing:-.03em;line-height:1.25}
@@ -98,7 +98,9 @@ section{background:var(--card);border:1px solid var(--line2);border-radius:10px;
 
 /* ── 표 ───────────────────────────────────────────────── */
 .scroll{overflow-x:auto;margin:0 -.5rem;padding:0 .5rem}
-table{border-collapse:collapse;width:100%;min-width:500px;font-size:.87rem}
+/* min-width 는 '더 줄이면 못 읽는' 하한이다. 그리드 칸보다 넓으면 칸마다
+   가로 스크롤이 생긴다 — 500px 이 그랬다. 칸 최소폭(340px)보다 낮게 잡는다. */
+table{border-collapse:collapse;width:100%;min-width:320px;font-size:.87rem}
 th{text-align:left;font-size:.7rem;font-weight:700;letter-spacing:.04em;color:var(--mut);
   padding:.6rem .7rem;border-bottom:1.5px solid var(--line);white-space:nowrap}
 td{padding:.62rem .7rem;border-bottom:1px solid var(--line2);vertical-align:top;

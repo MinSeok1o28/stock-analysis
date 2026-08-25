@@ -76,6 +76,20 @@ class Market(Enum):
     US = "US"
     KR = "KR"
 
+    @classmethod
+    def of_ticker(cls, ticker: str) -> "Market":
+        """티커 표기로 시장을 가른다.
+
+        KRX 는 6자리 종목코드를 쓴다. 신형 코드(0155E0, 0220W0)는 문자가 섞이지만
+        **첫 글자는 항상 숫자**다. 미국 티커는 알파벳으로 시작한다.
+        """
+        t = (ticker or "").strip().upper()
+        return cls.KR if len(t) == 6 and t[:1].isdigit() else cls.US
+
+    @property
+    def label(self) -> str:
+        return "한국" if self is Market.KR else "미국"
+
     @property
     def transcript_availability(self) -> str:
         """스토리 리더가 스스로 한계를 밝히기 위한 정보."""

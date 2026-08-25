@@ -316,8 +316,9 @@ def to_markdown(r: BriefResult) -> str:
             L.append(f"| {h['ticker']} {h['name']} | {px} | {_pct(h['rate'])} | {val} |")
 
     L += ["", "## 주요 종목 (보유 외)", ""]
-    for key, title in (("KR_amount", "한국 거래대금 상위"), ("US_amount", "미국 거래대금 상위"),
-                       ("KR_losers", "한국 급락"), ("US_gainers", "미국 급등")):
+    for key, title in (("KR_amount", "한국 거래대금 상위"), ("KR_gainers", "한국 급등"),
+                       ("KR_losers", "한국 급락"), ("US_amount", "미국 거래대금 상위"),
+                       ("US_gainers", "미국 급등"), ("US_losers", "미국 급락")):
         v = r.rankings.get(key)
         if isinstance(v, Unavailable):
             L += [f"### {title}", "", f"- {v.cite()}", ""]

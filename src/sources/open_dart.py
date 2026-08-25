@@ -90,9 +90,14 @@ def corp_code(ticker: str) -> str | Unavailable:
     idx = corp_index()
     if isinstance(idx, Unavailable):
         return idx
-    row = idx.get(ticker.strip())
+    t = ticker.strip()
+    row = idx.get(t)
     if not row:
-        return Unavailable(f"{ticker} 고유번호", "DART 상장사 목록에 없다 (6자리 종목코드 필요)")
+        # 예전 문구는 "6자리 종목코드 필요" 였는데 0220W0(6자리)에도 떠서 원인을 잘못 짚었다.
+        # corpCode.xml 은 공시대상법인만 담아 약 4천개다 — 신규 상장은 아직 없을 수 있다.
+        why = ("종목코드 형식이 아니다" if not (len(t) == 6 and t[:1].isdigit())
+               else f"DART corpCode.xml({len(idx):,}개)에 미등재 — 신규 상장이면 아직일 수 있다")
+        return Unavailable(f"{ticker} 고유번호", why)
     return row["corp_code"]
 
 

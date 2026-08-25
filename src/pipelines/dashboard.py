@@ -29,7 +29,16 @@ nav{{display:flex;gap:.5rem;flex-wrap:wrap;font-size:.8rem}}
 nav a{{color:var(--fg2);text-decoration:none;border:1px solid var(--line2);
  border-radius:99px;padding:.25rem .7rem;background:var(--card)}}
 nav a:hover{{border-color:var(--acc);color:var(--acc)}}
-.grid2{{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}}
+.grid2{{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}}
+/* 랭킹 6종. 넓은 화면에서 한국 3 · 미국 3 이 각각 한 줄에 들어간다. */
+.grid3{{display:grid;gap:1rem 1.15rem;
+ grid-template-columns:repeat(auto-fit,minmax(345px,1fr))}}
+.mkt{{margin-top:1.5rem}} .mkt:first-of-type{{margin-top:0}}
+.mkt>.lab{{display:flex;align-items:center;gap:.5rem;font-size:.82rem;font-weight:700;
+ color:var(--fg2);letter-spacing:.02em;margin:0 0 .7rem;
+ padding-bottom:.45rem;border-bottom:1px solid var(--line2)}}
+.mkt>.lab::before{{content:"";width:7px;height:7px;border-radius:50%;
+ background:var(--acc);flex:none}}
 .sig{{border-left:3px solid var(--acc);background:var(--accs);padding:.6rem .85rem;
  border-radius:0 5px 5px 0;font-size:.86rem;display:flex;flex-direction:column;gap:.15rem}}
 .sig .k{{font-weight:650;color:var(--acc);font-size:.78rem}}
@@ -51,7 +60,11 @@ h3{{font-size:.88rem;font-weight:700;color:var(--fg2);margin:1.2rem 0 .55rem;
 .search .clr{{border:0;background:transparent;color:var(--mut);font-size:1.3rem;
  cursor:pointer;padding:.2rem .6rem;line-height:1;border-radius:8px}}
 .search .clr:hover{{background:var(--card2);color:var(--fg)}}
-.search .hint{{font-size:.78rem;color:var(--mut);margin:.45rem 0 0 .3rem}}
+.search .hint{{font-size:.78rem;color:var(--mut);margin:.45rem 0 0 .3rem;line-height:1.6}}
+.search .hint.off{{color:var(--warn)}}
+.search .hint code{{background:var(--card2);padding:.08rem .32rem;border-radius:4px}}
+.search .fld.off{{border-color:var(--line2);background:var(--card2);opacity:.75}}
+.search .fld.off input{{cursor:not-allowed}}
 
 .sr{{position:absolute;z-index:60;left:0;right:0;top:calc(100% + .5rem);
  background:var(--card);border:1px solid var(--line);border-radius:14px;
@@ -109,7 +122,7 @@ a.stk:hover .go{{text-decoration:underline}}
    autocomplete="off" spellcheck="false" aria-label="종목 검색">
   <button class="clr" id="qc" type="button" hidden aria-label="지우기">&times;</button>
  </div>
- <div class="hint">종목을 고르면 재무·공시를 받아 분석 페이지를 만들어 새 창으로 엽니다.</div>
+ <div class="hint" id="hint">종목을 고르면 재무·공시를 받아 분석 페이지를 만들어 새 창으로 엽니다.</div>
  <div id="sr" class="sr" hidden></div>
  <div id="prog" class="prog" hidden></div>
 </div>
@@ -122,6 +135,23 @@ a.stk:hover .go{{text-decoration:underline}}
  var q=document.getElementById('q'), qc=document.getElementById('qc'),
      sr=document.getElementById('sr'), pg=document.getElementById('prog'),
      items=[], cur=-1, timer=null, busy=false;
+
+ /* ── 파일로 직접 열었는지 먼저 확인한다 ──
+    검색은 /api/search 를 부른다. file:// 로 열면 그 요청이 갈 곳이 없다.
+    예전엔 사용자가 다 타이핑한 뒤에야 실패 메시지가 떴다 — 그건 알려주는 게 아니라
+    헛수고를 시킨 뒤 통보하는 것이다. 입력 전에 막고 이유를 적는다. */
+ var OFFLINE = (location.protocol === 'file:');
+ if(OFFLINE){{
+   q.value=''; q.disabled=true;
+   q.placeholder='검색하려면 로컬 서버가 필요합니다';
+   document.querySelector('.search .fld').classList.add('off');
+   document.getElementById('hint').innerHTML=
+     '이 파일을 브라우저로 직접 열어 검색·분석 생성은 꺼져 있습니다. '
+     +'터미널에서 <code>python3 -m src.pipelines.serve</code> 를 실행하고 '
+     +'<a href="http://127.0.0.1:8766">http://127.0.0.1:8766</a> 으로 접속하면 켜집니다.<br>'
+     +'<span class="src">아래 표와 지표는 생성 시점 데이터라 서버 없이도 그대로 볼 수 있습니다.</span>';
+   document.getElementById('hint').classList.add('off');
+ }}
 
  function esc(s){{return String(s).replace(/[&<>"]/g,function(c){{
    return {{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c];}});}}
@@ -195,6 +225,12 @@ a.stk:hover .go{{text-decoration:underline}}
    run(r,false);
  }}
  function run(r,force){{
+   if(OFFLINE){{
+     done('분석 생성은 로컬 서버에서만 동작합니다. 터미널에서 '
+       +'<code>python3 -m src.pipelines.serve</code> 를 실행한 뒤 '
+       +'<a href="http://127.0.0.1:8766">http://127.0.0.1:8766</a> 으로 접속하세요.',true);
+     return;
+   }}
    busy=true; startProg(r.n);
    fetch('/api/generate?t='+encodeURIComponent(r.s)+(force?'&force=1':''))
     .then(function(x){{return x.json();}})
@@ -215,6 +251,7 @@ a.stk:hover .go{{text-decoration:underline}}
  }}
 
  q.addEventListener('input',function(){{
+   if(OFFLINE) return;
    var t=q.value.trim(); cur=-1; qc.hidden=!t;
    if(timer) clearTimeout(timer);
    if(!t){{items=[];sr.hidden=true;return;}}
@@ -384,14 +421,17 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
         P.append('<section id="holdings"><h2>보유 종목 밤사이 움직임</h2>'
                  + _table(["종목", "현재가", "변동", "평가액"], hr) + '</section>')
 
-    # 주요 종목
+    # 주요 종목 — 시장별로 거래대금·급등·급락 셋을 나란히 둔다.
+    # 한쪽 시장만 급등, 다른 쪽만 급락을 보여주면 어느 방향이 센지 비교가 안 된다.
+    mk = []
+    for pfx, lab in (("KR", "한국"), ("US", "미국")):
+        cells = "".join(
+            f'<div>{_rank_table(b.rankings.get(f"{pfx}_{k}"), t, b.names, b)}</div>'
+            for k, t in (("amount", "거래대금 상위"), ("gainers", "급등"), ("losers", "급락")))
+        mk.append(f'<div class="mkt"><div class="lab">{lab}</div>'
+                  f'<div class="grid3">{cells}</div></div>')
     P.append('<section id="major"><h2>주요 종목 <span class="chip">보유 외</span></h2>'
-             '<div class="grid2">'
-             + f'<div>{_rank_table(b.rankings.get("KR_amount"), "한국 거래대금 상위", b.names, b)}</div>'
-             + f'<div>{_rank_table(b.rankings.get("US_amount"), "미국 거래대금 상위", b.names, b)}</div>'
-             + f'<div>{_rank_table(b.rankings.get("KR_losers"), "한국 급락", b.names, b)}</div>'
-             + f'<div>{_rank_table(b.rankings.get("US_gainers"), "미국 급등", b.names, b)}</div>'
-             + '</div></section>')
+             + "".join(mk) + '</section>')
 
     # 관심 종목 · 실적 캘린더 (공개 모드에서는 통째로 제외)
     if b.watch and not public:
@@ -420,9 +460,10 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
     if scan and scan.candidates:
         ranked = [x for x in scan.candidates if x.events and not (public and x.held)]
         if ranked:
-            rows = []
             import os
+            from ..models import Market
             from ..narrative_io import load as _ldn
+            by_market: dict[str, list] = {"KR": [], "US": []}
             for x in ranked:
                 nm = _name_cell(x.ticker, b.names)
                 has_page = os.path.exists(f"dashboard/stocks/{x.ticker}.html")
@@ -440,13 +481,20 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                     f'{escape(e.tag)}</span>' for e in sorted(x.events, key=lambda e: -e.severity))
                 detail = escape(" · ".join(e.detail for e in
                                            sorted(x.events, key=lambda e: -e.severity)))
-                rows.append([nm, f"{x.price:,.2f}", _mv(x.change),
-                             f'{tags}<br><span class="src">{detail}</span>'])
+                by_market[Market.of_ticker(x.ticker).value].append(
+                    [nm, f"{x.price:,.2f}", _mv(x.change),
+                     f'{tags}<br><span class="src">{detail}</span>'])
+            blocks = []
+            for code, lab in (("KR", "한국"), ("US", "미국")):
+                rows = by_market[code]
+                body = (_table(["종목", "현재가", "변동", "왜 봐야 하나"], rows, numeric_from=1)
+                        if rows else '<p class="src">해당 시장에 걸린 종목 없음.</p>')
+                blocks.append(f'<div class="mkt"><div class="lab">{lab} '
+                              f'<span class="chip">{len(rows)}종목</span></div>{body}</div>')
             P.append('<section id="events"><h2>지금 볼 이유가 있는 종목</h2>'
                      '<p class="src" style="margin:0 0 .8rem">보유·관심 종목과 시장 랭킹을 '
                      '후보로 두고 관측 가능한 이벤트를 태그로 붙였습니다. 예측이 아닙니다.</p>'
-                     + _table(["종목", "현재가", "변동", "왜 봐야 하나"], rows, numeric_from=1)
-                     + "</section>")
+                     + "".join(blocks) + "</section>")
     # 액션 신호
     watch_tickers = {w.value.ticker for w in b.watch}
     shown = [s for s in b.signals
