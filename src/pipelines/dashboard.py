@@ -190,6 +190,43 @@ body{{padding:0}}
  .vnav .cnt,.sfoot{{display:none}}
  .main{{padding:1rem 1rem 3rem}}
 }}
+
+/* ══ 내 보유 편집 ═══════════════════════════════════════ */
+.hrow{{display:flex;align-items:center;gap:.5rem;padding:.5rem .2rem;flex-wrap:wrap;
+ border-bottom:1px solid var(--line2);font-size:.84rem}}
+.hrow:last-child{{border-bottom:0}}
+.hrow .hn{{flex:1 1 12rem;min-width:0;font-weight:600;overflow:hidden;
+ text-overflow:ellipsis;white-space:nowrap}}
+.hrow .ht{{font-family:"IBM Plex Mono",monospace;font-size:.74rem;color:var(--mut);
+ flex:none}}
+.hrow input[type=number],.hrow select,.hbar input{{font:inherit;font-size:.8rem;
+ padding:.3rem .4rem;border:1px solid var(--line);border-radius:7px;
+ background:var(--card);color:var(--fg)}}
+.hrow input[type=number]{{width:6.5rem;text-align:right;
+ font-family:"IBM Plex Mono",monospace}}
+.hrow .lbl{{font-size:.68rem;color:var(--mut);flex:none}}
+.hrow .rm{{border:1px solid var(--line);background:transparent;color:var(--mut);
+ border-radius:7px;font:inherit;font-size:.74rem;padding:.28rem .55rem;cursor:pointer}}
+.hrow .rm:hover{{border-color:var(--down);color:var(--down)}}
+.hbar{{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;
+ margin-top:.9rem;padding-top:.85rem;border-top:1px solid var(--line)}}
+.hbar .sp{{flex:1 1 auto}}
+.hbar label{{font-size:.74rem;color:var(--mut);display:flex;align-items:center;gap:.35rem}}
+.hstat{{border-left:3px solid var(--acc);background:var(--accs);border-radius:0 7px 7px 0;
+ padding:.6rem .9rem;font-size:.82rem;line-height:1.6;margin-bottom:.8rem}}
+.hstat.bad{{border-left-color:var(--warn);background:var(--warns);color:var(--warn)}}
+.hsearch{{position:relative;max-width:520px}}
+.hsearch input{{width:100%;font:inherit;font-size:.9rem;padding:.55rem .8rem;
+ border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--fg)}}
+.hsr{{position:absolute;z-index:60;left:0;right:0;top:calc(100% + .3rem);max-height:300px;
+ overflow-y:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;
+ box-shadow:0 14px 36px -12px rgba(0,0,0,.4)}}
+.hsr .r{{display:flex;align-items:center;gap:.6rem;padding:.55rem .85rem;cursor:pointer;
+ border-bottom:1px solid var(--line2);font-size:.85rem}}
+.hsr .r:last-child{{border-bottom:0}}
+.hsr .r:hover{{background:var(--accs)}}
+.hsr .r .add{{margin-left:auto;font-size:.74rem;color:var(--acc);font-weight:700}}
+.hsr .r.have .add{{color:var(--mut)}}
 .mlist{{max-height:430px;overflow-y:auto;border:1px solid var(--line2);border-radius:9px;
  background:var(--card)}}
 .mrow{{display:flex;align-items:center;gap:.6rem;padding:.45rem .7rem;font-size:.84rem;
@@ -500,6 +537,134 @@ body{{padding:0}}
  }});
  document.addEventListener('click',function(e){{if(!e.target.closest('.search'))sr.hidden=true;}});
 
+ /* ── 내 보유 편집 ──
+    브로커에서 끌어오지 않는다. 사람이 고른 것만 파일(portfolio/holdings.yaml)에 옮겨 적는다.
+    저장은 이 서버가 받는 유일한 POST 다. 검증에 실패하면 서버가 원래 파일로 되돌린다. */
+ var HROWS=null, HCCY='KRW', HTYPES=['single_stock'];
+ var hlist=document.getElementById('hlist'), hstat=document.getElementById('hstat'),
+     hsave=document.getElementById('hsave'), hreload=document.getElementById('hreload'),
+     hccy=document.getElementById('hccy'), hq=document.getElementById('hq'),
+     hsr=document.getElementById('hsr');
+
+ function hmsg(html,bad){{
+   if(!hstat) return;
+   hstat.hidden=false; hstat.className='hstat'+(bad?' bad':''); hstat.innerHTML=html;
+ }}
+ function hHas(sym){{
+   return HROWS ? HROWS.some(function(r){{return r.ticker===sym;}}) : false;
+ }}
+ function hDraw(){{
+   if(!hlist) return;
+   if(!HROWS){{ hlist.innerHTML='<p class="src">불러오는 중…</p>'; return; }}
+   if(!HROWS.length){{
+     hlist.innerHTML='<p class="src">보유 종목이 없습니다. 아래에서 검색하거나 체크해 추가하세요.</p>';
+   }} else {{
+     hlist.innerHTML=HROWS.map(function(r,i){{
+       var opts=HTYPES.map(function(t){{
+         return '<option'+(t===r.asset_type?' selected':'')+'>'+esc(t)+'</option>';}}).join('');
+       return '<div class="hrow" data-i="'+i+'">'
+         +'<span class="hn">'+esc(r.name||r.ticker)+'</span>'
+         +'<span class="ht">'+esc(r.ticker)+' · '+esc(r.market)+'</span>'
+         +'<select class="hty">'+opts+'</select>'
+         +'<span class="lbl">수량</span><input class="hqty" type="number" step="any" min="0" value="'+r.quantity+'">'
+         +'<span class="lbl">평단</span><input class="hcost" type="number" step="any" min="0" value="'+r.avg_cost+'">'
+         +'<span class="ht">'+esc(r.currency)+'</span>'
+         +'<button type="button" class="rm">빼기</button></div>';
+     }}).join('');
+     Array.prototype.forEach.call(hlist.querySelectorAll('.hrow'),function(el){{
+       var i=+el.dataset.i;
+       el.querySelector('.rm').onclick=function(){{ HROWS.splice(i,1); hDraw(); hSyncChecks(); }};
+       el.querySelector('.hqty').onchange=function(e){{ HROWS[i].quantity=+e.target.value||0; }};
+       el.querySelector('.hcost').onchange=function(e){{ HROWS[i].avg_cost=+e.target.value||0; }};
+       el.querySelector('.hty').onchange=function(e){{ HROWS[i].asset_type=e.target.value; }};
+     }});
+   }}
+   if(hsave) hsave.textContent='저장 ('+HROWS.length+'종목)';
+ }}
+ function hSyncChecks(){{
+   Array.prototype.forEach.call(document.querySelectorAll('.hpick'),function(cb){{
+     cb.checked=hHas(cb.dataset.s);
+   }});
+ }}
+ function hAdd(sym,name,market){{
+   if(!HROWS || hHas(sym)) return;
+   var kr=(market==='KR')|| /^[0-9]/.test(sym);
+   HROWS.push({{ticker:sym,name:name||sym,market:kr?'KR':'US',
+     asset_type:HTYPES[0]||'single_stock',quantity:0,avg_cost:0,
+     currency:kr?'KRW':'USD'}});
+   hDraw(); hSyncChecks();
+   hmsg('<b>'+esc(name||sym)+'</b> 담았습니다. 수량·평단을 채우고 <b>저장</b>을 누르세요.');
+ }}
+ function hLoad(quiet){{
+   if(OFFLINE){{
+     if(hlist) hlist.innerHTML='<p class="src">보유 편집은 로컬 서버에서만 됩니다. '
+       +'터미널에서 <code>python3 -m src.pipelines.serve</code> 를 실행하고 '
+       +'<a href="http://127.0.0.1:8766">http://127.0.0.1:8766</a> 으로 접속하세요.</p>';
+     if(hsave) hsave.disabled=true;
+     return;
+   }}
+   fetch('/api/holdings').then(function(x){{return x.json();}}).then(function(d){{
+     HTYPES=d.types||HTYPES; HCCY=d.base_currency||'KRW';
+     if(hccy) hccy.value=HCCY;
+     HROWS=(d.rows||[]).slice();
+     hDraw(); hSyncChecks();
+     if(!quiet && !d.ok) hmsg(esc(d.error||'보유 현황을 읽지 못했습니다'),true);
+   }}).catch(function(){{
+     if(hlist) hlist.innerHTML='<p class="src">보유 현황을 불러오지 못했습니다.</p>';
+   }});
+ }}
+ if(hsave) hsave.onclick=function(){{
+   if(!HROWS) return;
+   hsave.disabled=true; hmsg('저장 중…');
+   fetch('/api/holdings',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+     body:JSON.stringify({{rows:HROWS,base_currency:(hccy&&hccy.value)||'KRW'}})}})
+    .then(function(x){{return x.json();}})
+    .then(function(d){{
+      hsave.disabled=false;
+      if(!d.ok){{ hmsg('저장 실패 — '+esc(d.error||''),true); return; }}
+      HROWS=(d.rows||[]).slice(); hDraw(); hSyncChecks();
+      hmsg('<b>'+d.saved+'종목</b> 저장 완료. '+esc(d.note||''));
+    }})
+    .catch(function(){{ hsave.disabled=false; hmsg('저장 실패 — 서버에 연결하지 못했습니다.',true); }});
+ }};
+ if(hreload) hreload.onclick=function(){{ hLoad(); hmsg('파일 내용으로 되돌렸습니다.'); }};
+ Array.prototype.forEach.call(document.querySelectorAll('.hpick'),function(cb){{
+   cb.onclick=function(e){{
+     e.stopPropagation();
+     if(cb.checked) hAdd(cb.dataset.s, cb.dataset.n, cb.dataset.m);
+     else if(HROWS){{
+       HROWS=HROWS.filter(function(r){{return r.ticker!==cb.dataset.s;}});
+       hDraw(); hSyncChecks();
+     }}
+   }};
+ }});
+ if(hq) hq.addEventListener('input',function(){{
+   var t=hq.value.trim();
+   if(OFFLINE || !t){{ hsr.hidden=true; return; }}
+   fetch('/api/search?q='+encodeURIComponent(t))
+    .then(function(x){{return x.json();}})
+    .then(function(d){{
+      hsr.innerHTML=(d||[]).map(function(r){{
+        var have=hHas(r.s);
+        return '<div class="r'+(have?' have':'')+'" data-s="'+esc(r.s)+'" data-n="'+esc(r.n)+'"'
+          +' data-m="'+esc(r.m)+'"><b>'+esc(r.n)+'</b>'
+          +'<span class="ht">'+esc(r.s)+'</span>'
+          +'<span class="add">'+(have?'이미 보유':'보유에 추가 +')+'</span></div>';
+      }}).join('') || '<div class="r"><span class="src">일치하는 종목이 없습니다.</span></div>';
+      hsr.hidden=false;
+      Array.prototype.forEach.call(hsr.querySelectorAll('.r[data-s]'),function(el){{
+        el.onclick=function(){{
+          hAdd(el.dataset.s, el.dataset.n, /^[0-9]/.test(el.dataset.s)?'KR':'US');
+          hsr.hidden=true; hq.value='';
+        }};
+      }});
+    }}).catch(function(){{ hsr.hidden=true; }});
+ }});
+ document.addEventListener('click',function(e){{
+   if(hsr && !e.target.closest('.hsearch')) hsr.hidden=true;
+ }});
+ if(hlist) hLoad(true);
+
  /* ── 이벤트 표 체크박스 → 바구니 ──
     이벤트 스캐너가 이미 후보를 골라 뒀다. 거기서 몇 개 체크해 한 번에 돌리는 게
     검색창에 하나씩 치는 것보다 실제 사용 흐름에 가깝다. */
@@ -568,6 +733,69 @@ def _warn_block(b, symbols: list[str]) -> str:
         out.append(f'<div class="warn"><strong>⚠ {escape(b.label(sym))}</strong>'
                    f'<ul>{"".join(li)}</ul></div>')
     return "".join(out)
+
+
+def _holdings_editor_html() -> str:
+    """내 보유 편집기. 초기 상태는 서버에서 JS 가 받아 채운다 —
+    파일로 열었을 때 **낡은 보유 현황이 편집 가능한 것처럼 보이면 안 되기 때문이다.**"""
+    from . import majors as mj
+
+    picks = []
+    for code, lab, how in (("KR", "한국", "시가총액 상위"),
+                           ("US", "미국", "S&P 500 편입 비중 상위")):
+        got = mj.korea() if code == "KR" else mj.usa()
+        if isinstance(got, Unavailable):
+            picks.append(f'<div class="mkt"><div class="lab">{lab}</div>'
+                         f'<p class="src">{escape(got.cite())}</p></div>')
+            continue
+        rows = "".join(
+            f'<label class="mrow"><input type="checkbox" class="hpick" '
+            f'data-s="{escape(m.ticker)}" data-n="{escape(m.name)}" '
+            f'data-m="{m.market.value}">'
+            f'<span class="rk">{m.rank}</span>'
+            f'<span class="nm2">{escape(m.name)}</span>'
+            f'<span class="tk2">{escape(m.ticker)}</span>'
+            f'<span class="mv">{escape(m.metric_text)}</span></label>'
+            for m in got.value)
+        picks.append(f'<div class="mkt"><div class="lab">{lab} '
+                     f'<span class="chip">{how}</span></div>'
+                     f'<div class="mlist">{rows}</div></div>')
+
+    return (
+        '<section id="myholdings"><h2>내 보유 '
+        '<span class="chip">파일이 진실의 원천</span></h2>'
+        '<p class="src" style="margin:0 0 .9rem">여기서 고친 내용은 '
+        '<code>portfolio/holdings.yaml</code> 에 그대로 적힙니다. '
+        '브로커에서 끌어오지 않습니다 — 사람이 고르는 것만 저장합니다. '
+        '<b>수량·평단을 채워야</b> 평가액과 콕핏이 계산됩니다.</p>'
+        '<div id="hstat" class="hstat" hidden></div>'
+        '<div id="hlist"><p class="src">불러오는 중…</p></div>'
+        '<div class="hbar">'
+        ' <label>기준통화 <input id="hccy" value="KRW" size="4"></label>'
+        ' <span class="sp"></span>'
+        ' <button type="button" class="clr2" id="hreload">되돌리기</button>'
+        ' <button type="button" class="run" id="hsave">저장</button>'
+        '</div>'
+        '<h3>검색해서 추가</h3>'
+        '<div class="hsearch">'
+        ' <input id="hq" type="search" placeholder="회사 이름이나 티커  ·  삼성전자, NVDA"'
+        ' autocomplete="off" spellcheck="false">'
+        ' <div id="hsr" class="hsr" hidden></div>'
+        '</div>'
+        '<h3>목록에서 추가 <span class="chip">체크하면 담깁니다</span></h3>'
+        f'<div class="grid2">{"".join(picks)}</div>'
+        '</section>')
+
+
+def _page_state(ticker: str) -> str:
+    """분석 페이지가 어디까지 만들어져 있는가. full(사실+서사) · facts · none."""
+    import os
+
+    from ..narrative_io import load as _ldn
+    has_page = os.path.exists(f"dashboard/stocks/{ticker}.html")
+    if not has_page:
+        return "none"
+    return "full" if not _ldn(ticker).is_empty else "facts"
 
 
 def _rank_table(v, title: str, names: dict[str, str] | None = None, b=None) -> str:
@@ -648,16 +876,31 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                       else f'{v.value:,.2f}<br><span class="src">{escape(v.cite())}</span>'])
     add("today", f'<section id="macro"><h2>매크로·환율</h2>{_table(["지표", "값 · 출처"], mrows)}</section>')
 
-    # 보유 종목
+    # 보유 종목 — 편집기(내 보유) + 밤사이 움직임.
+    # 편집을 별도 서버(8765)로 미루지 않는 이유: 보유를 고치는 순간이 곧
+    # "이 종목을 분석해봐야겠다" 는 순간이라 같은 화면에 있어야 한다.
+    if not public:
+        add("holdings", _holdings_editor_html())
+
     if b.holdings_rows and not public:
         hr = []
         for h in sorted(b.holdings_rows, key=lambda x: -(abs(x["rate"] or 0))):
-            hr.append([_name_cell(h["ticker"], b.names)
-                       + f' <span class="chip">{escape(h["name"])}</span>',
-                       f'{h["price"].value:,.2f}' if h["price"] else "확인 필요",
-                       _mv(h["rate"]),
-                       f'{h["value"]:,.0f}' if h["value"] else "—"])
+            state = _page_state(h["ticker"])
+            hr.append([
+                f'<input type="checkbox" class="pick" data-s="{escape(h["ticker"])}" '
+                f'data-n="{escape(h["name"] or h["ticker"])}" title="분석 목록에 담기">'
+                + f'<a class="stk" href="stocks/{escape(h["ticker"])}.html" '
+                  f'data-t="{escape(h["ticker"])}" data-n="{escape(h["name"] or h["ticker"])}" '
+                  f'data-state="{state}" target="_blank">'
+                + _name_cell(h["ticker"], b.names)
+                + ('<span class="go">분석 보기 ↗</span>' if state == "full"
+                   else '<span class="go new">분석 생성 →</span>') + '</a>',
+                f'{h["price"].value:,.2f}' if h["price"] else "확인 필요",
+                _mv(h["rate"]),
+                f'{h["value"]:,.0f}' if h["value"] else "—"])
         add("holdings", '<section id="holdings"><h2>보유 종목 밤사이 움직임</h2>'
+                 '<p class="src" style="margin:0 0 .8rem">종목을 누르면 분석 페이지가 열립니다. '
+                 '체크하면 위 <b>분석</b> 버튼으로 여러 종목을 한 번에 돌릴 수 있습니다.</p>'
                  + _table(["종목", "현재가", "변동", "평가액"], hr) + '</section>')
 
     # 주요 기업 — 체크박스로 골라 한 번에 분석하는 출발점.

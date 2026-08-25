@@ -13,6 +13,7 @@
     /api/batch?t=A,B,C    여러 종목 동시 생성 시작 → 작업 id
     /api/batch/status?j=  진행 상황 (종목별 queued/running/ok/error)
     /compare?j=           완료된 작업의 비교 페이지
+    /api/holdings         보유 현황 조회(GET) · 저장(POST, JSON)
     /portfolio            보유 종목 편집기로 이동 안내
 
 **127.0.0.1 에만 바인딩한다.** 파일을 쓰는 서버를 외부에 열지 않는다.
@@ -224,7 +225,73 @@ def compare_page(job: BatchJob) -> str:
     return compare.render(ok, bad)
 
 
-#: 코드를 고친 뒤 서버를 재시작하지 않으면 나는 오류. serve 가 compare 를 지연 import 해서
+# ─────────────────────────────────────────────────────────────
+# 보유 현황 — 화면에서 고치되 파일이 여전히 진실의 원천이다
+#
+# CLAUDE.md: "보유 현황은 계속 수동이다." 이 API 는 그 원칙을 깨지 않는다 —
+# 브로커에서 끌어오는 게 아니라 **사람이 화면에서 고른 것**을 파일에 옮겨 적을 뿐이다.
+# 쓰기·검증·원복은 portfolio_io.save_holdings 가 맡는다.
+# ─────────────────────────────────────────────────────────────
+
+_regen_lock = threading.Lock()
+
+
+def holdings_state() -> dict:
+    from ..models import AssetType
+    from ..portfolio_io import load_holdings
+    p = load_holdings()
+    if isinstance(p, Unavailable):
+        return {"ok": False, "error": str(p), "rows": [],
+                "types": [t.value for t in AssetType]}
+    return {"ok": True, "base_currency": p.base_currency,
+            "updated": p.updated.isoformat() if p.updated else "",
+            "types": [t.value for t in AssetType],
+            "rows": [{"ticker": h.value.ticker, "name": h.value.name,
+                      "asset_type": h.value.asset_type.value,
+                      "market": h.value.market.value,
+                      "quantity": h.value.quantity, "avg_cost": h.value.avg_cost,
+                      "currency": h.value.currency} for h in p.holdings]}
+
+
+def _regen_dashboard() -> None:
+    """저장 뒤 파생 표(평가액·콕핏·신호)를 다시 만든다. 오래 걸려 백그라운드로 돈다."""
+    if not _regen_lock.acquire(blocking=False):
+        return                                   # 이미 돌고 있으면 겹쳐 돌리지 않는다
+    try:
+        from . import cockpit as ck, daily_brief as db, dashboard as dsh
+        dsh.render(db.run(), ck.run())
+        print("  보유 저장 후 대시보드 재생성 완료")
+    except Exception:
+        traceback.print_exc()
+    finally:
+        _regen_lock.release()
+
+
+def save_holdings_api(payload: dict) -> dict:
+    """{rows:[…], base_currency:'KRW'} → 저장하고 새 상태를 돌려준다."""
+    from ..portfolio_io import PortfolioError, save_holdings, write_snapshot
+    rows = payload.get("rows") or []
+    if not isinstance(rows, list):
+        return {"ok": False, "error": "rows 형식이 올바르지 않습니다"}
+    # 이름이 빈 줄은 벤더에서 채운다 — 사람이 티커만 골라도 되게.
+    blanks = [str(r.get("ticker", "")).upper() for r in rows if not str(r.get("name") or "").strip()]
+    looked = toss.names(blanks) if blanks else {}
+    for r in rows:
+        if not str(r.get("name") or "").strip():
+            tk = str(r.get("ticker", "")).upper()
+            r["name"] = looked.get(tk, tk)
+    try:
+        p = save_holdings(rows, str(payload.get("base_currency") or "KRW"))
+    except (PortfolioError, ValueError, TypeError) as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    snap = write_snapshot(p)
+    threading.Thread(target=_regen_dashboard, daemon=True).start()
+    return {"ok": True, "saved": len(p.holdings), "snapshot": str(snap),
+            "note": "평가액·콕핏 같은 파생 표는 재생성 중입니다 — 잠시 후 새로고침하세요.",
+            **holdings_state()}
+
+
+#: 코드를 고친 뒤 서버를 재시작하지 않으면 나는 오류.#: 코드를 고친 뒤 서버를 재시작하지 않으면 나는 오류. serve 가 compare 를 지연 import 해서
 #: 한쪽만 새 코드가 되기 때문이다. 로그를 뒤지게 하지 말고 화면에서 바로 알려준다.
 _STALE_HINT = ("<p class=\"hint\"><b>코드를 방금 고쳤다면 서버를 재시작하세요.</b><br>"
                "이 서버는 시작 시점의 모듈을 메모리에 들고 있습니다. 일부만 새 코드로 바뀌면 "
@@ -340,6 +407,9 @@ class Handler(BaseHTTPRequestHandler):
                 ).encode("utf-8"), code=500)
             return
 
+        if path == "/api/holdings":
+            self._json(holdings_state()); return
+
         if path.startswith("/stocks/"):
             name = Path(path).name
             f = STOCKS / name
@@ -350,6 +420,23 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self._send(b"not found", "text/plain", 404)
+
+    def do_POST(self) -> None:
+        """보유 저장 전용. 이 서버가 받는 유일한 POST 다."""
+        if urllib.parse.urlparse(self.path).path != "/api/holdings":
+            self._json({"ok": False, "error": "not found"}, 404); return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            if n <= 0 or n > 1_000_000:
+                raise ValueError("본문 길이가 올바르지 않습니다")
+            payload = json.loads(self.rfile.read(n).decode("utf-8"))
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._json({"ok": False, "error": f"본문 파싱 실패: {exc}"}, 400); return
+        try:
+            self._json(save_holdings_api(payload))
+        except Exception as exc:
+            traceback.print_exc()
+            self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, 500)
 
     def log_message(self, fmt: str, *args) -> None:
         if "/api/search" not in self.path:

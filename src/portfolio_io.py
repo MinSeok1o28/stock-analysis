@@ -200,6 +200,63 @@ def upcoming_earnings(items: list[Sourced[WatchItem]], within_days: int = 7,
     return sorted(out, key=lambda s: s.value.earnings_date or date.max)
 
 
+def save_holdings(rows: list[dict], base_currency: str = "KRW",
+                  path: Path = HOLDINGS_PATH) -> Portfolio:
+    """보유 현황을 파일에 쓴다. **검증에 실패하면 원래 파일로 되돌린다.**
+
+    보유 현황은 이 시스템의 유일한 진실의 원천이라, 깨진 파일을 남기느니 저장을 실패시킨다.
+    쓰기 전에 `.yaml.bak` 으로 백업하고, 다시 읽어 `load_holdings` 가 통과할 때만 확정한다.
+
+    입력은 편집 UI 가 만든 평범한 dict 다 — 사람이 손으로 고치는 경로(CLAUDE.md)를
+    막지 않기 위해 형식은 파일 그대로 둔다.
+    """
+    clean: list[dict] = []
+    for r in rows:
+        t = str(r.get("ticker", "")).strip().upper()
+        if not t:
+            continue
+        clean.append({
+            "ticker": t,
+            "name": str(r.get("name") or t).strip(),
+            "asset_type": str(r.get("asset_type") or AssetType.SINGLE_STOCK.value),
+            "market": str(r.get("market") or Market.of_ticker(t).value),
+            "quantity": float(r.get("quantity") or 0),
+            "avg_cost": float(r.get("avg_cost") or 0),
+            "currency": str(r.get("currency") or "USD").strip().upper(),
+        })
+    if not clean:
+        raise PortfolioError("종목이 하나도 없다 — 최소 1개는 필요하다")
+
+    backup = path.with_suffix(".yaml.bak")
+    had = path.exists()
+    if had:
+        backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    doc = {"updated": date.today().isoformat(),
+           "base_currency": (base_currency or "KRW").strip().upper(),
+           "holdings": clean}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False),
+                    encoding="utf-8")
+
+    # 검증. **load_holdings 는 형식 오류에 PortfolioError 를 던진다** — 반환값만 보면
+    # 예외가 그대로 빠져나가 깨진 파일이 남는다. 실제로 그렇게 새어 나갔던 자리다.
+    try:
+        got = load_holdings(path)
+        why = "" if not isinstance(got, Unavailable) else str(got)
+        if not why and got.is_empty:
+            why = "저장 후 읽으니 비어 있다"
+    except PortfolioError as exc:
+        why, got = str(exc), None
+    if why:
+        if had:                                   # 원복 — 깨진 파일을 남기지 않는다
+            path.write_text(backup.read_text(encoding="utf-8"), encoding="utf-8")
+        else:
+            path.unlink(missing_ok=True)          # 원래 없던 파일이면 흔적을 남기지 않는다
+        raise PortfolioError(why)
+    return got
+
+
 def write_snapshot(portfolio: Portfolio, on: date | None = None,
                    directory: Path = SNAPSHOT_DIR) -> Path:
     """수익 기여도 계산의 전제. holdings.yaml 을 바꿀 때마다 남긴다."""

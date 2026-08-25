@@ -50,8 +50,25 @@ class Major:
         return f"{self.metric / 1e12:,.1f}조"
 
 
+#: 한 번의 렌더에서 주요 기업 목록을 두 번 그린다(주요 기업 뷰·보유 편집기).
+#: HTTP 캐시가 있어도 2,600종목 순회가 반복되므로 프로세스 안에서 한 번만 계산한다.
+_memo: dict[tuple[str, int], object] = {}
+
+
+def _cached(key: str, limit: int, build):
+    hit = _memo.get((key, limit))
+    if hit is None:
+        hit = build()
+        _memo[(key, limit)] = hit
+    return hit
+
+
 def korea(limit: int = DEFAULT_LIMIT) -> Sourced[list[Major]] | Unavailable:
     """시가총액 상위. 주가 × 발행주식수 — **파생값이라 2차로 표기한다.**"""
+    return _cached("KR", limit, lambda: _korea(limit))
+
+
+def _korea(limit: int) -> Sourced[list[Major]] | Unavailable:
     u = toss.universe(KR_MARKETS)
     if isinstance(u, Unavailable):
         return u
@@ -87,6 +104,10 @@ def korea(limit: int = DEFAULT_LIMIT) -> Sourced[list[Major]] | Unavailable:
 
 def usa(limit: int = DEFAULT_LIMIT) -> Sourced[list[Major]] | Unavailable:
     """S&P 500 편입 비중 상위. 지수 편입 자체가 '주요'의 정의다."""
+    return _cached("US", limit, lambda: _usa(limit))
+
+
+def _usa(limit: int) -> Sourced[list[Major]] | Unavailable:
     h = etf_holdings.holdings(US_ETF)
     if isinstance(h, Unavailable):
         return h

@@ -210,18 +210,10 @@ def _save(form: dict[str, list[str]]) -> str:
             if not r["name"]:
                 r["name"] = looked.get(r["ticker"], r["ticker"])
 
-    doc = {"updated": date.today().isoformat(),
-           "base_currency": (form.get("base_currency", ["KRW"])[0] or "KRW").strip().upper(),
-           "holdings": rows}
+    # 쓰기·검증·원복은 portfolio_io 가 맡는다 — 대시보드의 보유 편집과 같은 경로를 쓴다.
+    from ..portfolio_io import save_holdings
+    p = save_holdings(rows, form.get("base_currency", ["KRW"])[0] or "KRW")
     backup = HOLDINGS_PATH.with_suffix(".yaml.bak")
-    if HOLDINGS_PATH.exists():
-        backup.write_text(HOLDINGS_PATH.read_text(encoding="utf-8"), encoding="utf-8")
-    HOLDINGS_PATH.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False),
-                             encoding="utf-8")
-
-    p = load_holdings()            # 검증. 실패하면 아래 except 가 원복한다.
-    if isinstance(p, Unavailable):
-        raise PortfolioError(str(p))
 
     snap = write_snapshot(p)
     from . import cockpit as ck
