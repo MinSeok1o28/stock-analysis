@@ -26,7 +26,7 @@ cp portfolio/holdings.example.yaml portfolio/holdings.yaml
 cp portfolio/watchlist.example.yaml portfolio/watchlist.yaml
 
 python3 -m src.config                       # 무엇이 되고 안 되는지 진단
-python3 -m unittest discover -s tests -t . -q   # 89개 테스트
+python3 -m unittest discover -s tests -t . -q   # 154개 테스트
 python3 -m src.pipelines.dashboard          # → dashboard/index.html
 ```
 
