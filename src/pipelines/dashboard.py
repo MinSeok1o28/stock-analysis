@@ -463,17 +463,28 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
             import os
             from ..models import Market
             from ..narrative_io import load as _ldn
+            from . import filings as _fl
             by_market: dict[str, list] = {"KR": [], "US": []}
             for x in ranked:
                 nm = _name_cell(x.ticker, b.names)
                 has_page = os.path.exists(f"dashboard/stocks/{x.ticker}.html")
-                has_nar = not _ldn(x.ticker).is_empty
+                nar = _ldn(x.ticker)
+                has_nar = not nar.is_empty
                 state = "full" if (has_page and has_nar) else ("facts" if has_page else "none")
+                # 서사가 있는 종목만 근거 보고서를 대조한다. 없으면 대조할 것이 없고,
+                # 조회는 submissions·list.json 이라 이미 캐시에 있을 확률이 높다.
+                stale_chip = ""
+                if has_nar:
+                    bc = _fl.check_basis(nar, _fl.latest(x.ticker))
+                    if bc.is_warning:
+                        stale_chip = (f' <span class="chip warn" title="{escape(bc.detail)}">'
+                                      f'{escape(bc.state.value)}</span>')
                 nm = (f'<a class="stk" href="stocks/{escape(x.ticker)}.html" '
                       f'data-t="{escape(x.ticker)}" data-n="{escape(x.name)}" '
                       f'data-state="{state}" target="_blank">{nm} '
                       + ('<span class="go">분석 보기 ↗</span>' if state == "full"
                          else '<span class="go new">분석 생성 →</span>') + '</a>')
+                nm += stale_chip
                 if x.held and not public:
                     nm += ' <span class="chip">보유</span>'
                 tags = " ".join(

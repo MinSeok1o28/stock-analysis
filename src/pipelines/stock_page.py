@@ -55,6 +55,8 @@ class StockPage:
     implied: float | None = None
     wacc: float | None = None
     quality: object | None = None
+    #: 서사 근거 보고서 대조 (filings.BasisCheck). 역DCF 의 basis 와 다른 것이라 이름을 나눈다.
+    narrative_basis: object | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -66,6 +68,13 @@ def build(ticker: str, on: date | None = None, *, with_story: bool = True) -> St
         return card
     nar = load_narrative(tk)
     page = StockPage(tk, on, card, nar)
+
+    # ── 서사 근거 보고서 대조 ────────────────────────────────
+    # 날짜가 아니라 사건으로 판단한다. 90일이 지나도 새 보고서가 없으면 안 낡은 것이고,
+    # 30일밖에 안 지났어도 새 10-K 가 나왔으면 낡은 것이다.
+    if not nar.is_empty:
+        from . import filings
+        page.narrative_basis = filings.check_basis(nar, filings.latest(tk))
 
     # ── 이익-현금 정합성 (영상 원본 규칙) ─────────────────────
     ni = cd._vals(card.series.get("NetIncome", []))
@@ -168,6 +177,11 @@ _EXTRA_CSS = """
 .risk .e{font-size:.72rem;color:var(--mut);border-top:1px solid var(--line2);
   padding-top:.45rem;margin-top:.15rem}
 
+.basis{margin-top:.6rem;border-left:3px solid var(--warn);background:var(--warns);
+ color:var(--warn);border-radius:0 6px 6px 0;padding:.5rem .8rem;font-size:.8rem;
+ line-height:1.6}
+.basis b{color:var(--warn);margin-right:.35rem}
+.basis a{color:var(--warn);white-space:nowrap}
 .miss{border-left:3px solid var(--warn);background:var(--warns);color:var(--warn);
   padding:.85rem 1.1rem;border-radius:0 8px 8px 0;font-size:.87rem;line-height:1.7}
 .grid3{display:grid;gap:.9rem;grid-template-columns:repeat(auto-fit,minmax(255px,1fr))}
@@ -222,9 +236,22 @@ def render(p: StockPage, out_dir: Path = OUT_DIR) -> Path:
     # ① 한 줄 요약 (해석)
     if n.one_liner:
         d, stale = n.staleness(p.on)
+        bc = p.narrative_basis
+        cur = bc is not None and bc.state.name == "CURRENT"
+        # 근거 보고서가 최신이라고 확인됐으면 '90일 지남' 잔소리를 하지 않는다.
+        # 시간은 낡음의 대리 지표일 뿐이고, 여기서는 진짜 지표를 확보했다.
+        meta = (f'[해석] {escape(n.author)} 작성 · {n.updated} ({d}일 전)'
+                + (f' · {escape(bc.detail)}' if cur else
+                   ("" if bc is not None and bc.is_warning else
+                    (" · 갱신 권고" if stale else ""))))
+        badge = ""
+        if bc is not None and bc.is_warning:
+            link = (f' <a href="{escape(n.basis.url)}" target="_blank" rel="noopener">근거 보고서 ↗</a>'
+                    if n.basis.url else "")
+            badge = (f'<div class="basis"><b>{escape(bc.state.value)}</b> '
+                     f'{escape(bc.detail)}{link}</div>')
         P.append(f'<div class="hero"><div class="one">{rich(n.one_liner)}</div>'
-                 f'<div class="src" style="margin-top:.5rem">[해석] {escape(n.author)} 작성 · '
-                 f'{n.updated} ({d}일 전){" · 갱신 권고" if stale else ""}</div></div>')
+                 f'<div class="src" style="margin-top:.5rem">{meta}</div>{badge}</div>')
     else:
         P.append('<div class="miss">한 줄 요약이 없습니다. '
                  '<code>company-decoder</code> 스킬로 서사를 작성하면 여기에 표시됩니다 '

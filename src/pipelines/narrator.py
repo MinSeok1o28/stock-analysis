@@ -179,6 +179,14 @@ def write(ticker: str, on: date | None = None, *, timeout: int = TIMEOUT
     doc["updated"] = (on or date.today()).isoformat()
     doc["author"] = "claude"
     doc["risks"] = (doc.get("risks") or [])[:3]          # 3개로 강제
+
+    # 어느 보고서를 근거로 쓴 해석인지 남긴다. 날짜만으로는 낡았는지 알 수 없다 —
+    # 새 10-K 가 나왔는가로 판단해야 하고, 그 기준이 접수번호다 (pipelines/filings.py).
+    from . import filings
+    ref = filings.latest(tk)
+    if not isinstance(ref, Unavailable):
+        doc["based_on"] = {"form": ref.form, "filed_on": ref.filed_on.isoformat(),
+                           "accession": ref.accession, "url": ref.url}
     NARRATIVE_DIR.mkdir(parents=True, exist_ok=True)
     dest = path_for(tk)
     dest.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False,

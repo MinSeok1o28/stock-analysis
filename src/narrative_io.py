@@ -41,6 +41,32 @@ class Risk:
 
 
 @dataclass(frozen=True)
+class FilingBasis:
+    """이 서사가 근거로 삼은 정기보고서.
+
+    `updated` 날짜만으로는 서사가 낡았는지 알 수 없다. 90일이 지나도 새 보고서가
+    없으면 안 낡은 것이고, 30일밖에 안 지났어도 새 10-K 가 나왔으면 낡은 것이다.
+    접수번호(accession·rcept_no)는 제출되면 다시 바뀌지 않아 이 판단의 기준이 된다.
+    """
+
+    form: str = ""                  # "10-K" · "사업보고서"
+    filed_on: date | None = None
+    accession: str = ""             # SEC accession · DART rcept_no
+    url: str = ""
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.accession
+
+    @property
+    def label(self) -> str:
+        if self.is_empty:
+            return "근거 보고서 미기록"
+        when = f" ({self.filed_on.isoformat()} 접수)" if self.filed_on else ""
+        return f"{self.form or '정기보고서'}{when}"
+
+
+@dataclass(frozen=True)
 class Narrative:
     ticker: str
     updated: date | None
@@ -51,6 +77,8 @@ class Narrative:
     risks: list[Risk] = field(default_factory=list)
     watch_next: list[str] = field(default_factory=list)
     author: str = "claude"
+    #: 근거 보고서. 이 필드가 없던 시절의 서사는 비어 있다 (UNRECORDED 로 표시된다).
+    basis: FilingBasis = field(default_factory=FilingBasis)
     path: Path | None = None
 
     @property
@@ -62,6 +90,31 @@ class Narrative:
             return (-1, True)
         d = ((today or date.today()) - self.updated).days
         return (d, d > STALE_DAYS)
+
+
+def _basis_from(raw) -> FilingBasis:
+    """yaml 의 based_on 블록 → FilingBasis. 없거나 망가져 있으면 빈 값이다."""
+    if not isinstance(raw, dict):
+        return FilingBasis()
+    filed = raw.get("filed_on")
+    if isinstance(filed, str):
+        try:
+            filed = date.fromisoformat(filed)
+        except ValueError:
+            filed = None
+    return FilingBasis(form=str(raw.get("form", "")).strip(),
+                       filed_on=filed if isinstance(filed, date) else None,
+                       accession=str(raw.get("accession", "")).strip(),
+                       url=str(raw.get("url", "")).strip())
+
+
+def _basis_to(b: FilingBasis) -> dict:
+    d: dict = {"form": b.form, "accession": b.accession}
+    if b.filed_on:
+        d["filed_on"] = b.filed_on.isoformat()
+    if b.url:
+        d["url"] = b.url
+    return d
 
 
 def path_for(ticker: str, directory: Path = NARRATIVE_DIR) -> Path:
@@ -92,6 +145,7 @@ def load(ticker: str, directory: Path = NARRATIVE_DIR) -> Narrative:
                               str(r.get("evidence", ""))))
     return Narrative(
         ticker=ticker.upper(), updated=upd if isinstance(upd, date) else None,
+        basis=_basis_from(d.get("based_on")),
         one_liner=str(d.get("one_liner", "")).strip(),
         how_it_makes_money=str(d.get("how_it_makes_money", "")).strip(),
         mermaid=str(d.get("mermaid", "")).strip(),
@@ -116,6 +170,8 @@ def save(n: Narrative, directory: Path = NARRATIVE_DIR) -> Path:
                   for r in n.risks[:3]],
         "watch_next": n.watch_next,
     }
+    if not n.basis.is_empty:
+        doc["based_on"] = _basis_to(n.basis)
     p.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False,
                                 default_flow_style=False), encoding="utf-8")
     return p

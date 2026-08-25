@@ -27,7 +27,7 @@ cp portfolio/holdings.example.yaml portfolio/holdings.yaml
 cp portfolio/watchlist.example.yaml portfolio/watchlist.yaml
 
 python3 -m src.config                       # 무엇이 되고 안 되는지 진단
-python3 -m unittest discover -s tests -t . -q   # 178개 테스트
+python3 -m unittest discover -s tests -t . -q   # 193개 테스트
 python3 -m src.pipelines.dashboard          # → dashboard/index.html
 ```
 
@@ -98,6 +98,7 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | 변화 없으면 "변화 없음" | `sentence_diff.SentenceDiff.is_material` | — |
 | **매매 신호 금지** | `SignalKind` 에 매매 항목 부재 + `Signal` 이 매매 표현 거부 | `ValueError` |
 | 벤더 등락률을 그대로 믿지 않음 | `core/anomalies.py` 정황 → `open_dart.corporate_actions()` 확정 | — |
+| 서사가 낡았는지 시간이 아니라 사건으로 | `pipelines/filings.check_basis()` 접수번호 대조 | — |
 | 브로커 주문 경로 차단 | `toss.ALLOWED_PATHS` + 계좌 헤더 미생성 | `OrderPathBlocked` |
 | 계층 의존 방향 | `tests/test_layering.py` | 테스트 실패 |
 
@@ -144,6 +145,7 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | 순부채·총차입 추이 | 동작 · 미국 |
 | **이벤트 스캐너 + 과거 반응 시나리오** | 동작 · SEC 8-K + 일봉 · 키 불필요 |
 | **급등락 이상치 경고** | 동작 · 한국은 DART 공시로 확정 / 미국은 정황까지 |
+| **서사 근거 보고서 추적** | 동작 · 새 10-K·사업보고서가 나오면 서사에 `새 보고서 나옴` 배지 |
 | **종목 상세 페이지 (사실 + 서사)** | 동작 · `dashboard/stocks/<티커>.html` |
 | **종목 검색 + 온디맨드 생성** | 동작 · 7,673종목 자동완성 · 로컬 서버 필요 |
 | **서사 자동 작성** | 동작 · `claude` CLI 호출 · 별도 API 키 불필요 |
