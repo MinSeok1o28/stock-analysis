@@ -16,6 +16,7 @@
 - **스토리 리더** — 연도별 공시 문구 비교 (신규/삭제 문장, `will→may` 톤다운, 헤지 어휘 증감)
 - **액션 신호** — 매수·매도가 아니라 **어느 딥다이브를 돌릴지**만 제시
 - **급등락 이상치 경고** — 거래정지 재개·신규상장·액면분할을 걸러내고, 한국 종목은 DART 공시로 원인을 확정
+- **다중 선택 배치 분석** — 여러 종목을 체크해 한 번에. 동시 실행이라 3종목 119초 (순차 300초) · 비교 표 + 종목별 접이식
 
 ## 빠른 시작
 
@@ -27,7 +28,7 @@ cp portfolio/holdings.example.yaml portfolio/holdings.yaml
 cp portfolio/watchlist.example.yaml portfolio/watchlist.yaml
 
 python3 -m src.config                       # 무엇이 되고 안 되는지 진단
-python3 -m unittest discover -s tests -t . -q   # 193개 테스트
+python3 -m unittest discover -s tests -t . -q   # 208개 테스트
 python3 -m src.pipelines.dashboard          # → dashboard/index.html
 ```
 
@@ -38,7 +39,8 @@ python3 -m src.pipelines.event_scanner      # 지금 볼 종목 자동 선정 �
 python3 -m src.pipelines.stock_page NVDA    # 종목 상세 → dashboard/stocks/NVDA.html
 python3 -m src.pipelines.company_decoder AAPL  # 기업 해독 카드 → reports/cards/
 python3 -m src.pipelines.story_reader NVDA  # 3개년 10-K 문구 변화 → reports/story/
-python3 -m src.pipelines.serve              # 대시보드 + 종목 검색 + 서사 자동작성 (127.0.0.1:8766)
+python3 -m src.pipelines.serve              # 대시보드 + 검색 + 서사 + 다중선택 배치 (127.0.0.1:8766)
+BATCH_WORKERS=6 python3 -m src.pipelines.serve   # 배치 동시 실행 수 조절 (기본 4, 최대 8)
 python3 -m src.pipelines.narrator TSLA      # 서사만 따로 생성
 python3 -m src.pipelines.editor             # 포트폴리오 편집 UI (127.0.0.1:8765)
 python3 -m src.pipelines.dashboard --public # 개인 정보 뺀 공개용 → dashboard/public.html
@@ -146,6 +148,7 @@ models  ←  sources    외부 I/O. 벤더가 바뀌면 여기만 바뀐다
 | **이벤트 스캐너 + 과거 반응 시나리오** | 동작 · SEC 8-K + 일봉 · 키 불필요 |
 | **급등락 이상치 경고** | 동작 · 한국은 DART 공시로 확정 / 미국은 정황까지 |
 | **서사 근거 보고서 추적** | 동작 · 새 10-K·사업보고서가 나오면 서사에 `새 보고서 나옴` 배지 |
+| **다중 선택 배치 분석** | 동작 · 체크박스로 골라 동시 생성 → 비교 표 + 접이식 상세 |
 | **종목 상세 페이지 (사실 + 서사)** | 동작 · `dashboard/stocks/<티커>.html` |
 | **종목 검색 + 온디맨드 생성** | 동작 · 7,673종목 자동완성 · 로컬 서버 필요 |
 | **서사 자동 작성** | 동작 · `claude` CLI 호출 · 별도 API 키 불필요 |

@@ -10,6 +10,9 @@
     /stocks/<T>.html      종목 상세 (없으면 생성 안내)
     /api/search?q=        종목 검색 (자동완성)
     /api/generate?t=      해당 종목 페이지 생성 후 경로 반환
+    /api/batch?t=A,B,C    여러 종목 동시 생성 시작 → 작업 id
+    /api/batch/status?j=  진행 상황 (종목별 queued/running/ok/error)
+    /compare?j=           완료된 작업의 비교 페이지
     /portfolio            보유 종목 편집기로 이동 안내
 
 **127.0.0.1 에만 바인딩한다.** 파일을 쓰는 서버를 외부에 열지 않는다.
@@ -17,11 +20,15 @@
 
 from __future__ import annotations
 
+import itertools
 import json
+import os
 import re
 import threading
 import traceback
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -37,6 +44,11 @@ INDEX_CACHE = DASH / "universe.json"
 _universe: list[dict] | None = None
 _lock = threading.Lock()
 _building: set[str] = set()
+
+#: 동시에 띄울 `claude` CLI 개수. 병목이 CLI 응답 대기(I/O)라 스레드로 충분하다.
+#: 너무 올리면 구독 한도에 부딪힌다 — 그래서 상한을 둔다.
+BATCH_WORKERS = max(1, min(8, int(os.environ.get("BATCH_WORKERS", "4"))))
+BATCH_MAX_TICKERS = 20
 
 
 def load_universe(force: bool = False) -> list[dict]:
@@ -114,12 +126,101 @@ def generate(ticker: str, *, with_story: bool = False, narrate: bool = True,
         dest = sp.render(pg)
         return {"ok": True, "url": f"/stocks/{tk}.html",
                 "narrative": not pg.narrative.is_empty, "note": note,
-                "size": dest.stat().st_size}
+                "size": dest.stat().st_size, "summary": sp.summarize(pg)}
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     finally:
         with _lock:
             _building.discard(tk)
+
+
+# ─────────────────────────────────────────────────────────────
+# 배치 생성 — 여러 종목을 한 번에
+#
+# 순차로 돌리면 이득이 없다. 5종목 × 60초 = 300초는 한 번에 기다리든 다섯 번
+# 나눠 기다리든 같다. **동시에 돌려야** 총 대기가 준다 (300초 → 70~90초).
+# 파이프라인 부분은 2초 남짓이고 나머지가 전부 CLI 응답 대기라 스레드로 충분하다.
+# ─────────────────────────────────────────────────────────────
+
+_job_seq = itertools.count(1)
+_jobs: dict[str, "BatchJob"] = {}
+_jobs_lock = threading.Lock()
+
+JOB_KEEP = 8          # 최근 작업만 들고 있는다. 메모리에만 사는 결과다.
+
+
+@dataclass
+class BatchJob:
+    id: str
+    tickers: list[str]
+    workers: int
+    state: dict[str, str] = field(default_factory=dict)      # ticker → queued|running|ok|error
+    note: dict[str, str] = field(default_factory=dict)       # ticker → 진행/실패 사유
+    summaries: dict[str, object] = field(default_factory=dict)
+    done: bool = False
+
+    def snapshot(self) -> dict:
+        rows = [{"t": t, "state": self.state.get(t, "queued"), "note": self.note.get(t, "")}
+                for t in self.tickers]
+        fin = sum(1 for r in rows if r["state"] in ("ok", "error"))
+        return {"job": self.id, "done": self.done, "workers": self.workers,
+                "total": len(self.tickers), "finished": fin, "rows": rows}
+
+
+def _run_batch(job: BatchJob, narrate: bool, force: bool) -> None:
+    """작업 스레드. 종목마다 generate() 를 부르고 결과를 job 에 적는다."""
+    def one(tk: str) -> None:
+        with _jobs_lock:
+            job.state[tk] = "running"
+        try:
+            r = generate(tk, narrate=narrate, force=force)
+        except Exception as exc:                       # 한 종목이 죽어도 나머지는 간다
+            r = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        with _jobs_lock:
+            if r.get("ok"):
+                job.state[tk] = "ok"
+                job.note[tk] = str(r.get("note") or "")
+                job.summaries[tk] = r.get("summary")
+            else:
+                job.state[tk] = "error"
+                job.note[tk] = str(r.get("error") or "알 수 없는 실패")
+
+    try:
+        with ThreadPoolExecutor(max_workers=job.workers) as ex:
+            list(ex.map(one, job.tickers))
+    finally:
+        with _jobs_lock:
+            job.done = True
+
+
+def start_batch(tickers: list[str], *, workers: int = BATCH_WORKERS,
+                narrate: bool = True, force: bool = False) -> BatchJob:
+    """중복을 제거하고 순서를 지킨 채 작업을 띄운다."""
+    seen, ordered = set(), []
+    for t in tickers:
+        tk = t.strip().upper()
+        if tk and tk not in seen:
+            seen.add(tk); ordered.append(tk)
+    ordered = ordered[:BATCH_MAX_TICKERS]
+    job = BatchJob(id=f"j{next(_job_seq)}", tickers=ordered,
+                   workers=max(1, min(8, workers)))
+    job.state = {t: "queued" for t in ordered}
+    with _jobs_lock:
+        _jobs[job.id] = job
+        for old in list(_jobs)[:-JOB_KEEP]:
+            _jobs.pop(old, None)
+    threading.Thread(target=_run_batch, args=(job, narrate, force), daemon=True).start()
+    return job
+
+
+def compare_page(job: BatchJob) -> str:
+    """완료된 작업 → 비교 페이지 HTML. 선택마다 달라지므로 파일로 쓰지 않는다."""
+    from . import compare
+    ok = [job.summaries[t] for t in job.tickers if job.state.get(t) == "ok"
+          and job.summaries.get(t) is not None]
+    bad = [(t, job.note.get(t, "실패")) for t in job.tickers
+           if job.state.get(t) != "ok"]
+    return compare.render(ok, bad)
 
 
 _MISSING = """<!doctype html><meta charset="utf-8"><title>{t} — 생성 필요</title>
@@ -173,8 +274,47 @@ class Handler(BaseHTTPRequestHandler):
             tk = (q.get("t", [""])[0] or "").strip().upper()
             if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", tk):
                 self._json({"ok": False, "error": "티커 형식이 올바르지 않습니다"}, 400); return
-            self._json(generate(tk, narrate=("nonarr" not in q),
-                                force=("force" in q))); return
+            r = generate(tk, narrate=("nonarr" not in q), force=("force" in q))
+            r.pop("summary", None)      # 비교용 dataclass — 단건 응답에는 싣지 않는다
+            self._json(r); return
+
+        if path == "/api/batch":
+            raw = (q.get("t", [""])[0] or "").split(",")
+            tks = [x.strip().upper() for x in raw if x.strip()]
+            bad = [x for x in tks if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", x)]
+            if bad:
+                self._json({"ok": False, "error": f"티커 형식 오류: {', '.join(bad[:3])}"}, 400)
+                return
+            if not tks:
+                self._json({"ok": False, "error": "종목이 선택되지 않았습니다"}, 400); return
+            try:
+                w = int(q.get("workers", [str(BATCH_WORKERS)])[0])
+            except ValueError:
+                w = BATCH_WORKERS
+            job = start_batch(tks, workers=w, narrate=("nonarr" not in q),
+                              force=("force" in q))
+            self._json({"ok": True, **job.snapshot()}); return
+
+        if path == "/api/batch/status":
+            job = _jobs.get(q.get("j", [""])[0])
+            if job is None:
+                self._json({"ok": False, "error": "작업을 찾을 수 없습니다"}, 404); return
+            self._json({"ok": True, **job.snapshot()}); return
+
+        if path == "/compare":
+            job = _jobs.get(q.get("j", [""])[0])
+            if job is None:
+                self._send("<p>작업을 찾을 수 없습니다. 서버를 다시 시작했다면 "
+                           "결과가 사라집니다 — 메모리에만 남기기 때문입니다.</p>"
+                           .encode("utf-8"), code=404)
+                return
+            try:
+                self._send(compare_page(job).encode("utf-8"))
+            except Exception:
+                traceback.print_exc()
+                self._send("<p>비교 페이지 생성 실패 — 서버 로그를 확인하세요.</p>"
+                           .encode("utf-8"), code=500)
+            return
 
         if path.startswith("/stocks/"):
             name = Path(path).name
@@ -198,6 +338,7 @@ def serve(host: str = HOST, port: int = PORT) -> None:
     from . import narrator
     print(f"  종목 검색 인덱스 {n:,}개 " + ("(토스 마스터)" if n else "— 미확보"))
     print(f"  서사 자동 작성: {'가능 (claude CLI)' if narrator.available() else '불가 — 사실만 표시'}")
+    print(f"  배치 동시 실행: {BATCH_WORKERS}개 (BATCH_WORKERS 로 조절, 최대 8)")
     print("  127.0.0.1 에만 열립니다. 종료: Ctrl+C")
     try:
         ThreadingHTTPServer((host, port), Handler).serve_forever()

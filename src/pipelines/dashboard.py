@@ -111,6 +111,37 @@ a.stk{{color:inherit;text-decoration:none;display:inline-flex;flex-direction:col
 a.stk .go{{font-size:.7rem;font-weight:600;color:var(--acc)}}
 a.stk .go.new{{color:var(--mut);font-weight:400}}
 a.stk:hover .go{{text-decoration:underline}}
+
+/* ══ 다중 선택 · 배치 분석 ═══════════════════════════════ */
+.pick{{width:16px;height:16px;accent-color:var(--acc);cursor:pointer;flex:none;
+ margin-right:.15rem;vertical-align:-2px}}
+.basket{{display:none;margin:.7rem 0 0;padding:.75rem .9rem;background:var(--card);
+ border:1px solid var(--line);border-radius:12px;
+ display:none;flex-wrap:wrap;gap:.45rem;align-items:center}}
+.basket.on{{display:flex}}
+.basket .lead{{font-size:.78rem;font-weight:700;color:var(--fg2);margin-right:.2rem}}
+.bchip{{display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;
+ background:var(--accs);color:var(--acc);border:1px solid var(--acc);
+ border-radius:99px;padding:.2rem .3rem .2rem .6rem;font-weight:600}}
+.bchip button{{border:0;background:transparent;color:inherit;cursor:pointer;
+ font-size:.95rem;line-height:1;padding:0 .25rem;border-radius:50%}}
+.bchip button:hover{{background:var(--acc);color:var(--card)}}
+.basket .sp{{flex:1 1 auto}}
+.basket label{{font-size:.74rem;color:var(--mut);display:flex;align-items:center;gap:.35rem}}
+.basket input[type=number]{{width:52px;font:inherit;font-size:.8rem;text-align:center;
+ padding:.25rem;border:1px solid var(--line);border-radius:7px;
+ background:var(--card2);color:var(--fg)}}
+.basket .run{{border:0;border-radius:9px;background:var(--acc);color:#fff;font:inherit;
+ font-size:.84rem;font-weight:700;padding:.5rem 1.1rem;cursor:pointer;white-space:nowrap}}
+.basket .run:disabled{{opacity:.5;cursor:not-allowed}}
+.basket .clr2{{border:1px solid var(--line);background:transparent;color:var(--mut);
+ border-radius:9px;font:inherit;font-size:.78rem;padding:.45rem .8rem;cursor:pointer}}
+.bstats{{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.6rem}}
+.bstat{{font-size:.72rem;padding:.18rem .5rem;border-radius:99px;border:1px solid var(--line2);
+ background:var(--card2);color:var(--mut);font-weight:600}}
+.bstat.running{{border-color:var(--acc);color:var(--acc);background:var(--accs)}}
+.bstat.ok{{border-color:var(--up);color:var(--up);background:var(--ups)}}
+.bstat.error{{border-color:var(--warn);color:var(--warn);background:var(--warns)}}
 </style></head><body><div class="w">
 <header><h1>투자 리서치 대시보드</h1>
 <div class="sub">{on} · 매매 판단은 사람이 합니다. 이 화면은 어디를 더 볼지만 제시합니다.</div>
@@ -124,6 +155,13 @@ a.stk:hover .go{{text-decoration:underline}}
  </div>
  <div class="hint" id="hint">종목을 고르면 재무·공시를 받아 분석 페이지를 만들어 새 창으로 엽니다.</div>
  <div id="sr" class="sr" hidden></div>
+ <div id="basket" class="basket">
+  <span class="lead">선택</span><span id="bchips"></span><span class="sp"></span>
+  <label title="동시에 띄울 분석 개수. 올릴수록 빨라지지만 구독 한도에 부딪힐 수 있습니다.">
+   동시 <input id="bw" type="number" min="1" max="8" value="{workers}"></label>
+  <button class="clr2" id="bclr" type="button">비우기</button>
+  <button class="run" id="brun" type="button">분석</button>
+ </div>
  <div id="prog" class="prog" hidden></div>
 </div>
 <nav><a href="#market">증시 현황</a><a href="#macro">매크로</a><a href="#holdings">보유 종목</a>
@@ -194,6 +232,96 @@ a.stk:hover .go{{text-decoration:underline}}
    pg.innerHTML='<div class="msg">'+html+'</div>';
  }}
 
+ /* ── 선택 바구니 · 배치 분석 ──
+    순차로 돌리면 이득이 없다. 5종목 × 60초 = 300초는 나눠 기다리든 한 번에 기다리든 같다.
+    서버가 동시에 돌려야 총 대기가 준다 — 그래서 동시 실행 수를 여기서 넘긴다. */
+ var basket=[], job=null, poll=null;
+ var bk=document.getElementById('basket'), bch=document.getElementById('bchips'),
+     brun=document.getElementById('brun'), bclr=document.getElementById('bclr'),
+     bw=document.getElementById('bw');
+
+ function inBasket(sym){{
+   for(var i=0;i<basket.length;i++) if(basket[i].s===sym) return true;
+   return false;
+ }}
+ function toggle(r,on){{
+   if(on){{ if(!inBasket(r.s)) basket.push(r); }}
+   else basket=basket.filter(function(x){{return x.s!==r.s;}});
+   drawBasket();
+ }}
+ function drawBasket(){{
+   bk.classList.toggle('on', basket.length>0);
+   bch.innerHTML=basket.map(function(r){{
+     return '<span class="bchip">'+esc(r.n)
+       +'<button type="button" data-s="'+esc(r.s)+'" aria-label="빼기">&times;</button></span>';
+   }}).join('');
+   Array.prototype.forEach.call(bch.querySelectorAll('button'),function(b){{
+     b.onclick=function(){{
+       basket=basket.filter(function(x){{return x.s!==b.dataset.s;}});
+       syncChecks(); drawBasket();
+     }};
+   }});
+   brun.textContent = busy ? '분석 중…' : ('분석 ('+basket.length+'종목)');
+   brun.disabled = busy || !basket.length;
+ }}
+ function syncChecks(){{
+   Array.prototype.forEach.call(document.querySelectorAll('.pick'),function(cb){{
+     var sym=cb.dataset.s || (items[+cb.dataset.i]||{{}}).s;
+     if(sym) cb.checked=inBasket(sym);
+   }});
+ }}
+ function drawBatch(d){{
+   var chips=d.rows.map(function(r){{
+     var lab={{queued:'대기',running:'진행 중…',ok:'완료',error:'실패'}}[r.state]||r.state;
+     return '<span class="bstat '+r.state+'" title="'+esc(r.note||'')+'">'
+       +esc(r.t)+' · '+lab+'</span>';
+   }}).join('');
+   stopProg(); pg.hidden=false; pg.className='prog ok';
+   pg.innerHTML='<div class="msg"><b>'+d.finished+'/'+d.total+'</b> 완료 · 동시 '
+     +d.workers+'개로 돌리는 중입니다. 창을 닫지 마세요.'
+     +'<div class="bstats">'+chips+'</div></div>';
+ }}
+ function runBatch(){{
+   if(OFFLINE){{
+     done('배치 분석은 로컬 서버에서만 동작합니다. 터미널에서 '
+       +'<code>python3 -m src.pipelines.serve</code> 를 실행한 뒤 '
+       +'<a href="http://127.0.0.1:8766">http://127.0.0.1:8766</a> 으로 접속하세요.',true);
+     return;
+   }}
+   if(busy || !basket.length) return;
+   busy=true; drawBasket(); sr.hidden=true;
+   var w=Math.max(1,Math.min(8,+bw.value||4));
+   var ts=basket.map(function(r){{return r.s;}}).join(',');
+   fetch('/api/batch?t='+encodeURIComponent(ts)+'&workers='+w)
+    .then(function(x){{return x.json();}})
+    .then(function(d){{
+      if(!d.ok){{ busy=false; drawBasket(); done('시작 실패: '+esc(d.error||''),true); return; }}
+      job=d.job; drawBatch(d); pollBatch();
+    }})
+    .catch(function(){{ busy=false; drawBasket();
+      done('서버에 연결하지 못했습니다.',true); }});
+ }}
+ function pollBatch(){{
+   fetch('/api/batch/status?j='+encodeURIComponent(job))
+    .then(function(x){{return x.json();}})
+    .then(function(d){{
+      if(!d.ok){{ busy=false; drawBasket(); done('진행 상황을 읽지 못했습니다.',true); return; }}
+      drawBatch(d);
+      if(d.done){{
+        busy=false; drawBasket();
+        var bad=d.rows.filter(function(r){{return r.state==='error';}}).length;
+        var okn=d.total-bad;
+        done('<b>'+okn+'종목</b> 분석 완료'+(bad?' · '+bad+'종목 실패':'')
+          +'. 비교 페이지를 새 창으로 엽니다. '
+          +'<a href="/compare?j='+encodeURIComponent(job)+'" target="_blank">다시 열기</a>', bad>0);
+        window.open('/compare?j='+encodeURIComponent(job),'_blank');
+      }} else poll=setTimeout(pollBatch,1500);
+    }})
+    .catch(function(){{ busy=false; drawBasket(); done('진행 상황 조회 실패.',true); }});
+ }}
+ brun.onclick=runBatch;
+ bclr.onclick=function(){{ basket=[]; syncChecks(); drawBasket(); }};
+
  /* ── 검색 ── */
  function draw(term){{
    if(!items.length){{
@@ -201,7 +329,9 @@ a.stk:hover .go{{text-decoration:underline}}
    }}
    sr.innerHTML=items.map(function(r,i){{
      return '<div class="row'+(i===cur?' on':'')+'" data-i="'+i+'">'
-       +'<div class="nm">'+hl(r.n,term)+'</div>'
+       +'<div class="nm"><input type="checkbox" class="pick" data-i="'+i+'"'
+       +(inBasket(r.s)?' checked':'')+' title="여러 종목을 골라 한 번에 분석">'
+       +hl(r.n,term)+'</div>'
        +'<div class="act'+(r.ready?'':' new')+'">'+(r.ready?'분석 완료 ↗':'분석 생성 →')+'</div>'
        +'<div class="meta"><span class="tk">'+esc(r.s)+'</span>'
        +'<span class="mk">'+esc(r.m)+'</span></div></div>';
@@ -209,6 +339,14 @@ a.stk:hover .go{{text-decoration:underline}}
    sr.hidden=false;
    Array.prototype.forEach.call(sr.querySelectorAll('.row'),function(el){{
      el.onclick=function(){{pick(items[+el.dataset.i]);}};
+   }});
+   /* 체크박스는 단건 생성 흐름을 타지 않는다 — 담기만 한다. */
+   Array.prototype.forEach.call(sr.querySelectorAll('.pick'),function(cb){{
+     cb.onclick=function(e){{
+       e.stopPropagation();
+       var r=items[+cb.dataset.i];
+       toggle({{s:r.s,n:r.n}}, cb.checked);
+     }};
    }});
  }}
  function pick(r){{
@@ -276,6 +414,16 @@ a.stk:hover .go{{text-decoration:underline}}
    else if(e.key==='Escape'){{sr.hidden=true;}}
  }});
  document.addEventListener('click',function(e){{if(!e.target.closest('.search'))sr.hidden=true;}});
+
+ /* ── 이벤트 표 체크박스 → 바구니 ──
+    이벤트 스캐너가 이미 후보를 골라 뒀다. 거기서 몇 개 체크해 한 번에 돌리는 게
+    검색창에 하나씩 치는 것보다 실제 사용 흐름에 가깝다. */
+ Array.prototype.forEach.call(document.querySelectorAll('.pick[data-s]'),function(cb){{
+   cb.onclick=function(e){{
+     e.stopPropagation();
+     toggle({{s:cb.dataset.s,n:cb.dataset.n||cb.dataset.s}}, cb.checked);
+   }};
+ }});
 
  /* ── 이벤트 표의 종목 클릭도 같은 흐름으로 ── */
  Array.prototype.forEach.call(document.querySelectorAll('a.stk'),function(a){{
@@ -479,7 +627,9 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                     if bc.is_warning:
                         stale_chip = (f' <span class="chip warn" title="{escape(bc.detail)}">'
                                       f'{escape(bc.state.value)}</span>')
-                nm = (f'<a class="stk" href="stocks/{escape(x.ticker)}.html" '
+                nm = (f'<input type="checkbox" class="pick" data-s="{escape(x.ticker)}" '
+                      f'data-n="{escape(x.name)}" title="여러 종목을 골라 한 번에 분석">'
+                      f'<a class="stk" href="stocks/{escape(x.ticker)}.html" '
                       f'data-t="{escape(x.ticker)}" data-n="{escape(x.name)}" '
                       f'data-state="{state}" target="_blank">{nm} '
                       + ('<span class="go">분석 보기 ↗</span>' if state == "full"
@@ -551,7 +701,9 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
                  + '</section>')
 
     out.parent.mkdir(parents=True, exist_ok=True)
+    from .serve import BATCH_WORKERS
     out.write_text(_TPL.format(on=b.on.isoformat(), css=_CSS, fonts=FONT_LINK, body="\n".join(P),
+                               workers=BATCH_WORKERS,
                                watchnav="" if public else '<a href="#watch">관심 종목</a>'),
                    encoding="utf-8")
     return out

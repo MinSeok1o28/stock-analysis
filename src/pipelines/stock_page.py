@@ -60,6 +60,91 @@ class StockPage:
     notes: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class Summary:
+    """비교 표 한 줄. `StockPage` 를 통째로 들고 있지 않기 위한 압축.
+
+    여러 종목을 한 번에 돌리면 페이지 객체가 그만큼 쌓인다. 비교에 실제로 쓰는 값만
+    뽑아 두고 원본은 버린다. 서사는 파일에 있으니 필요할 때 다시 읽으면 된다.
+    """
+
+    ticker: str
+    name: str
+    market: Market
+    currency: str
+    price: float | None = None
+    market_cap: float | None = None          # 통화 원단위
+    implied: float | None = None             # 역DCF 요구 성장률
+    wacc: float | None = None
+    rev_cagr: float | None = None            # 가장 짧은 매출 CAGR 축
+    rev_cagr_label: str = ""
+    fcf_latest: float | None = None
+    fcf_avg: float | None = None
+    quality_flag: str = ""                   # ok · warn · insufficient
+    quality_text: str = ""
+    top_segment: str = ""
+    top_segment_share: float | None = None
+    reaction_median: float | None = None
+    reaction_n: int = 0
+    has_narrative: bool = False
+    basis_state: str = ""
+    basis_detail: str = ""
+    note_count: int = 0
+
+    @property
+    def gap(self) -> float | None:
+        """요구 성장률 − 과거 실제 매출 성장률.
+
+        양수면 '지금 가격이 과거보다 빠른 성장을 요구한다' 는 뜻이다.
+        **이건 비싸다/싸다가 아니다** — 어디를 더 파야 하는지의 출발점일 뿐이다.
+        """
+        if self.implied is None or self.rev_cagr is None:
+            return None
+        return self.implied - self.rev_cagr
+
+    @property
+    def unit(self) -> tuple[float, str]:
+        return (1e12, "조") if self.market is Market.KR else (1e9, "B")
+
+
+def summarize(p: StockPage) -> Summary:
+    """빌드된 페이지에서 비교에 쓸 값만 뽑는다."""
+    c = p.card
+    rev_axis = next((a for a in p.axes
+                     if a.value is not None and a.label.startswith("매출")), None)
+    fcf_latest = fcf_avg = None
+    if not isinstance(c.fcf, Unavailable):
+        vals = cd._vals(c.fcf)
+        if vals:
+            fcf_latest, fcf_avg = vals[-1][1], normalized_base(vals)
+    seg_name, seg_share = "", None
+    if c.segments is not None and getattr(c.segments, "tables", None):
+        # 가장 앞선 표(부문별)의 최대 비중 항목. 매출이 어디에 쏠려 있는지의 대리 지표다.
+        first = next(iter(c.segments.tables.values()), None)
+        rows = first.shares() if first is not None else []
+        if rows:
+            seg_name, _v, seg_share, _m = rows[0]
+    bc = p.narrative_basis
+    return Summary(
+        ticker=p.ticker, name=c.info.get("name") or p.ticker, market=c.market,
+        currency=str(c.info.get("currency") or ""),
+        price=None if isinstance(c.price, Unavailable) else c.price.value,
+        market_cap=None if isinstance(c.market_cap, Unavailable) else c.market_cap.value,
+        implied=p.implied, wacc=p.wacc,
+        rev_cagr=rev_axis.value if rev_axis else None,
+        rev_cagr_label=rev_axis.label if rev_axis else "",
+        fcf_latest=fcf_latest, fcf_avg=fcf_avg,
+        quality_flag=getattr(p.quality, "flag", "") if p.quality else "",
+        quality_text=str(p.quality) if p.quality else "",
+        top_segment=seg_name, top_segment_share=seg_share,
+        reaction_median=p.stat.median_abs if p.stat else None,
+        reaction_n=p.stat.n if p.stat else 0,
+        has_narrative=not p.narrative.is_empty,
+        basis_state=bc.state.value if bc is not None else "",
+        basis_detail=bc.detail if bc is not None else "",
+        note_count=len(p.notes))
+
+
 def build(ticker: str, on: date | None = None, *, with_story: bool = True) -> StockPage | Unavailable:
     on = on or date.today()
     tk = ticker.upper()
