@@ -89,9 +89,22 @@ class TestSplitLike(unittest.TestCase):
         self.assertIn(AnomalyKind.SPLIT_LIKE, [h.kind for h in hits])
 
     def test_ratio_off_by_more_than_tolerance(self) -> None:
-        """9.5배는 10:1 분할 허용오차(3%) 밖이다."""
+        """9.5배는 10:1 분할 허용오차 밖이다."""
         hits = inspect(-0.8947, bars([50_000, 5_263]))
         self.assertNotIn(AnomalyKind.SPLIT_LIKE, [h.kind for h in hits])
+
+    def test_ordinary_doubling_is_not_a_merge(self) -> None:
+        """실제로 오탐이 났던 자리 — AMIX 5.37 → 10.52 (+96%) 는 그냥 급등이었다.
+
+        ±100% 는 흔한 변동폭이라 허용오차가 넓으면 그 구간이 통째로 분할로 잡힌다.
+        진짜 권리락은 기준가가 정확히 배수로 조정되므로 좁혀도 놓치지 않는다.
+        """
+        hits = inspect(0.9590, bars([5.37, 10.52]))
+        self.assertNotIn(AnomalyKind.SPLIT_LIKE, [h.kind for h in hits])
+
+    def test_exact_merge_still_detected(self) -> None:
+        hits = inspect(1.0, bars([5.00, 10.00]))
+        self.assertIn(AnomalyKind.SPLIT_LIKE, [h.kind for h in hits])
 
 
 class TestBaseMismatch(unittest.TestCase):

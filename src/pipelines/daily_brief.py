@@ -181,16 +181,25 @@ def run(on: date | None = None) -> BriefResult:
     # 일봉으로 정황을 만들고(core/anomalies), 한국 종목은 공시로 확정한다(DART, 1차).
     anomalies, actions = _inspect_rankings(rk)
     for sym, hits in anomalies.items():
-        if not any(h.invalidates_rate for h in hits):
+        bad = [h for h in hits if h.invalidates_rate]
+        if not bad:
             continue
-        why = " · ".join(h.kind.value for h in hits if h.invalidates_rate)
-        ev = [a.detail for a in hits]
         act = actions.get(sym)
-        if act is not None and not isinstance(act, Unavailable) and act.value:
-            ev.append(act.cite())
+        confirmed = (act is not None and not isinstance(act, Unavailable) and act.value)
+        # 신호는 **사람이 할 수 있는 일이 있을 때만** 낸다.
+        # 미국 분할 정황은 확인할 공시 목록이 없어(SEC 에 DART list.json 대응물 부재)
+        # "원문 확인 필요" 라고 해도 갈 곳이 없다 — 그건 신호가 아니라 표의 주석이다.
+        if not confirmed and all(h.kind is anom.AnomalyKind.SPLIT_LIKE for h in bad):
+            continue
+        why = " · ".join(h.kind.value for h in bad)
+        ev = [str(h) for h in hits]
+        if confirmed:
+            ev = [f"공시 확정 — {a.title} ({a.filed_on.isoformat()}) · {a.url}"
+                  for a in act.value[:3]] + ev + [act.cite()]
+        tail = "공시로 원인이 확정됐다" if confirmed else "원문 확인 필요"
         signals.append(Signal(
             SignalKind.DATA_GAP, sym,
-            f"랭킹 등락률을 그대로 읽을 수 없다 ({why}) — 원문 확인 필요",
+            f"랭킹 등락률을 그대로 읽을 수 없다 ({why}) — {tail}",
             tuple(ev)))
 
     if anomalies:

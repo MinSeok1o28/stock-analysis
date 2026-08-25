@@ -6,6 +6,7 @@ Notion 원문의 '대시보드 갱신' 스킬에 대응한다.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from html import escape
 from pathlib import Path
@@ -42,6 +43,9 @@ nav a:hover{{border-color:var(--acc);color:var(--acc)}}
 .sig{{border-left:3px solid var(--acc);background:var(--accs);padding:.6rem .85rem;
  border-radius:0 5px 5px 0;font-size:.86rem;display:flex;flex-direction:column;gap:.15rem}}
 .sig .k{{font-weight:650;color:var(--acc);font-size:.78rem}}
+.sig .ev{{margin:.4rem 0 0;padding-left:1rem;font-size:.76rem;line-height:1.65;
+ color:var(--mut);gap:.2rem}}
+.sig .ev a{{color:var(--acc);white-space:nowrap}}
 h3{{font-size:.88rem;font-weight:700;color:var(--fg2);margin:1.2rem 0 .55rem;
  letter-spacing:-.01em}}
 
@@ -787,6 +791,16 @@ def _holdings_editor_html() -> str:
         '</section>')
 
 
+_URL_RE = re.compile(r"https?://[^\s·]+")
+
+
+def _linkify(text: str) -> str:
+    """근거 문자열 안의 URL 만 링크로. escape 뒤에 바꿔 주입을 막는다."""
+    out = escape(text)
+    return _URL_RE.sub(
+        lambda m: f'<a href="{m.group(0)}" target="_blank" rel="noopener">원문 ↗</a>', out)
+
+
 def _page_state(ticker: str) -> str:
     """분석 페이지가 어디까지 만들어져 있는가. full(사실+서사) · facts · none."""
     import os
@@ -1029,10 +1043,15 @@ def render(b: db.BriefResult, c, out: Path = OUT, *, public: bool = False,
     shown = [s for s in b.signals
              if not (public and s.ticker and s.ticker in watch_tickers)]
     hidden_n = len(b.signals) - len(shown)
+    # 근거(evidence)를 함께 싣는다. "원문 확인 필요" 라고 적으면서 원문으로 가는 길을
+    # 안 주면 신호가 아니라 불평이다. Signal 은 근거를 들고 다니는데 화면이 버리고 있었다.
     sigs = "".join(
         f'<div class="sig"><span class="k">{escape(s.kind.value)}'
         + (f' · {escape(s.ticker)}' if s.ticker else "") + "</span>"
-        f'<span>{escape(s.reason)}</span></div>' for s in shown)
+        f'<span>{escape(s.reason)}</span>'
+        + (f'<ul class="ev">{"".join(f"<li>{_linkify(e)}</li>" for e in s.evidence)}</ul>'
+           if s.evidence else "")
+        + '</div>' for s in shown)
     if public and hidden_n:
         sigs += (f'<div class="sig"><span class="k">비공개</span>'
                  f'<span>관심 종목에서 파생된 신호 {hidden_n}건은 공개본에 표시하지 않습니다.</span></div>')
